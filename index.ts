@@ -6,9 +6,13 @@ import {
   composioConfigured,
   env,
   oauthConfigured,
+  persistenceConfigured,
   supabaseConfigured,
 } from "./src/config/env.js";
+import { SupabaseRestClient } from "./src/integrations/supabase-rest.js";
 import { consentPageError, renderConsentPage } from "./src/oauth/consent-page.js";
+import { HomeFixRepository } from "./src/repositories/homefix-repository.js";
+import { registerHomeFixTools } from "./src/tools/homefix-tools.js";
 
 const compatibilityInputSchema = z.object({
   label: z
@@ -64,6 +68,10 @@ const server = oauthConfigured
   : new MCPServer({ ...serverConfig });
 
 const typedServer = server as MCPServer<SupabaseOAuthUser>;
+
+const homefixRepository = persistenceConfigured
+  ? new HomeFixRepository(new SupabaseRestClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!))
+  : undefined;
 
 export const compatibilityProbe = typedServer.tool(
   {
@@ -128,13 +136,17 @@ export const verifyIdentity = oauthConfigured
     )
   : undefined;
 
+if (oauthConfigured) {
+  registerHomeFixTools(typedServer, homefixRepository);
+}
+
 server.get("/health", (c) =>
   c.json({ status: "ok", service: "homefix-concierge" })
 );
 
 server.get("/ready", (c) => {
   const authStatus = oauthConfigured ? "configured" : "not-configured";
-  const status = oauthConfigured && supabaseConfigured && composioConfigured ? "ready" : "degraded";
+  const status = oauthConfigured && supabaseConfigured && persistenceConfigured && composioConfigured ? "ready" : "degraded";
   return c.json(
     {
       status,
@@ -142,6 +154,7 @@ server.get("/ready", (c) => {
         mcp: "configured",
         oauth: authStatus,
         supabase: supabaseConfigured ? "configured" : "not-configured",
+        persistence: persistenceConfigured ? "configured" : "not-configured",
         composio: composioConfigured ? "configured" : "not-configured",
       },
     },

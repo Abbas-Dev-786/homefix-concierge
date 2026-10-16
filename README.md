@@ -32,6 +32,14 @@ npm run verify:deployed
 
 The active temporary tool is `compatibility-probe`, bound to `views/compatibility-view/`. It is deliberately labeled as a spike and contains no household, provider, booking, or seeded user data.
 
+Phase 2 and Phase 3 add authenticated household/profile persistence and typed HomeFix domain tools. Apply the checked-in migrations to the intended Supabase project before using those tools with real data:
+
+```bash
+supabase db push
+```
+
+The migrations are not applied automatically. The deployment must have `SUPABASE_URL` and the server-only `SUPABASE_SERVICE_ROLE_KEY`; the service key is never sent to Views or MCP tool output.
+
 When a temporary Supabase access token is available, the protocol check can also verify the protected identity tool. Set it only in the current shell and never commit it:
 
 ```powershell

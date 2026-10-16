@@ -54,3 +54,7 @@ export const supabaseConfigured = Boolean(
 
 export const composioConfigured = Boolean(env.COMPOSIO_API_KEY);
 
+export const persistenceConfigured = Boolean(
+  env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY
+);
+
