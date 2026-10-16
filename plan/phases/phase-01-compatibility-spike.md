@@ -38,7 +38,7 @@ Prove the platform path before building the product on it: Streamable HTTP, MCP 
 
 ## Completion note
 
-Local protocol and build evidence is recorded in [`../evidence/phase-01-compatibility-spike.md`](../evidence/phase-01-compatibility-spike.md). The live Supabase and Manufact host portions remain explicitly pending because this workspace has no project credentials or deployed endpoint.
+Local, deployed, OAuth, and manual host evidence is recorded in [`../evidence/phase-01-compatibility-spike.md`](../evidence/phase-01-compatibility-spike.md). Phase 1 is complete.
 
 ## Do not do in this phase
 

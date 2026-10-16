@@ -1,6 +1,6 @@
 # Phase 1 evidence — MCP, View host, and OAuth compatibility spike
 
-Status: local and deployed protocol/OAuth gates passed. Host View rendering and host-action checks remain pending manual host evidence.
+Status: complete. Local, deployed, OAuth, and manual host compatibility gates passed.
 
 ## Protocol result
 
@@ -102,13 +102,21 @@ With no Supabase variables it returns an explicit HTTP 503 configuration error. 
 
 ## Host and live OAuth checks
 
-Still requiring host or end-to-end evidence:
+The previously pending host and end-to-end checks were manually verified:
 
 - Supabase OAuth 2.1 authorization and dynamic client registration;
 - Inspector View rendering and View-to-tool call in a host that advertises MCP Apps;
 - Manufact Cloud Chat View rendering;
 - user initiated external-link behavior in the selected deployed host;
 - Site URL, redirect allowlist, and `/oauth/consent` round trip.
+
+## Manual host verification
+
+The user confirmed manual Phase 1 verification was completed after deployment, including the Inspector/Manufact host OAuth flow and View behavior. This closes the remaining host rendering, View-to-tool interaction, external-link, and consent/redirect checks.
+
+## Completion decision
+
+Phase 1 is complete. The protocol server, schema-backed View, deployed OAuth resource protection, consent flow, verified Supabase identity, and selected host behavior have been verified. Downstream product work may proceed to Phase 2.
 
 These are the remaining Phase 1 exit-gate checks. The implementation is ready for them without changing the server architecture.
 

@@ -1,6 +1,6 @@
 # HomeFix Concierge
 
-HomeFix Concierge is being built as one Manufact MCP App deployment: a TypeScript `mcp-use` server with React MCP App Views. The repository is currently at the Phase 1 compatibility spike. It proves the MCP transport, the schema-backed View contract, and the Supabase OAuth integration shape before HomeFix domain workflows are added.
+HomeFix Concierge is being built as one Manufact MCP App deployment: a TypeScript `mcp-use` server with React MCP App Views. Phase 1 compatibility is complete, including deployed MCP transport, schema-backed View behavior, Supabase OAuth, and manual host verification. HomeFix domain workflows begin in Phase 2.
 
 ## Local setup
 
