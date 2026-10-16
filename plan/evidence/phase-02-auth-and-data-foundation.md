@@ -18,12 +18,13 @@ Status: implementation complete locally; Supabase migration application and auth
 - `npm run typecheck`: passed.
 - `npm run build`: passed.
 - `npm run verify:protocol`: passed with persistence readiness configured and unauthenticated protected tools rejected.
+- `npm run test:unit`: passed with household isolation, partial profile update, repair idempotency, legal transitions, and repeated handoff-open coverage.
 
 ## Required activation
 
 Apply `supabase/migrations/20261016000000_phase2_foundation.sql` and then verify onboarding with two isolated Supabase Auth users. The migrations are intentionally not applied automatically because that changes the external Supabase project.
 
-Phase 2 exit-gate checks still required after migration:
+Phase 2 exit-gate checks still require the live migration and deployed verifier after migration:
 
 - first-user onboarding and repeated/concurrent household creation;
 - profile create/update and no fabricated defaults;

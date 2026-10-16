@@ -11,6 +11,7 @@ const environmentSchema = z.object({
   MCP_URL: optionalTrimmedString,
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   COMPOSIO_API_KEY: optionalTrimmedString,
+  COMPOSIO_API_BASE_URL: optionalTrimmedString,
   TASKRABBIT_TOOL_MAP_JSON: optionalTrimmedString,
   SUPABASE_URL: optionalTrimmedString,
   SUPABASE_ANON_KEY: optionalTrimmedString,

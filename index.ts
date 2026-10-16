@@ -10,6 +10,7 @@ import {
   supabaseConfigured,
 } from "./src/config/env.js";
 import { SupabaseRestClient } from "./src/integrations/supabase-rest.js";
+import { ComposioTaskrabbitAdapter } from "./src/integrations/composio-taskrabbit.js";
 import { consentPageError, renderConsentPage } from "./src/oauth/consent-page.js";
 import { HomeFixRepository } from "./src/repositories/homefix-repository.js";
 import { registerHomeFixTools } from "./src/tools/homefix-tools.js";
@@ -36,10 +37,10 @@ const compatibilityOutputSchema = z.object({
 const serverConfig = {
   name: "homefix-concierge",
   title: "HomeFix Concierge",
-  version: "0.1.0-phase-1",
-  description: "HomeFix Concierge compatibility spike for MCP, Views, and OAuth.",
+  version: "0.1.0-phase-5",
+  description: "HomeFix Concierge for household repair intake, live provider discovery, and user-approved booking handoffs.",
   instructions:
-    "This endpoint is in the Phase 1 compatibility spike. Use compatibility-probe to verify MCP transport, View binding, and host capabilities.",
+    "Coordinate HomeFix repair requests using the authenticated household context. Use live Taskrabbit results only when returned by the integration, show timestamps, ask for explicit user selection, and never claim a repair is booked unless the user reports that outcome.",
   websiteUrl: "https://mcp-use.com",
   basePath: env.MCP_ENDPOINT_PATH,
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["512x512"] }],
@@ -71,6 +72,15 @@ const typedServer = server as MCPServer<SupabaseOAuthUser>;
 
 const homefixRepository = persistenceConfigured
   ? new HomeFixRepository(new SupabaseRestClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!))
+  : undefined;
+
+const taskrabbitAdapter = composioConfigured
+  ? new ComposioTaskrabbitAdapter({
+      apiKey: env.COMPOSIO_API_KEY,
+      baseUrl: env.COMPOSIO_API_BASE_URL,
+      toolMapJson: env.TASKRABBIT_TOOL_MAP_JSON,
+      timeoutMs: env.OUTBOUND_TIMEOUT_MS,
+    })
   : undefined;
 
 export const compatibilityProbe = typedServer.tool(
@@ -137,7 +147,7 @@ export const verifyIdentity = oauthConfigured
   : undefined;
 
 if (oauthConfigured) {
-  registerHomeFixTools(typedServer, homefixRepository);
+  registerHomeFixTools(typedServer, homefixRepository, taskrabbitAdapter);
 }
 
 server.get("/health", (c) =>

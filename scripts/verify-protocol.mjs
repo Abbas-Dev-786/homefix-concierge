@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
+import fs from "node:fs";
 import {
   Client,
   LATEST_PROTOCOL_VERSION,
@@ -9,6 +10,21 @@ import {
 } from "@modelcontextprotocol/client";
 
 const projectRoot = new URL("..", import.meta.url);
+
+function loadLocalEnv() {
+  const envPath = fileURLToPath(new URL("../.env", import.meta.url));
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match || line.trimStart().startsWith("#")) continue;
+    const [, name, rawValue] = match;
+    if (name === "PHASE1_TEST_ACCESS_TOKEN") continue;
+    if (process.env[name] !== undefined) continue;
+    process.env[name] = rawValue.trim().replace(/^"(.*)"$/, "$1");
+  }
+}
+
+loadLocalEnv();
 
 function getFreePort() {
   return new Promise((resolve, reject) => {

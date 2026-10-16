@@ -17,7 +17,8 @@ The product is a persistent home-repair coordination MCP App. Its primary UI is 
 
 - Phase 0 local baseline is complete.
 - Phase 1 is complete: local and deployed protocol/OAuth checks passed, and manual Inspector/Manufact host verification was confirmed.
-- Phase 2/3 implementation is present locally; Supabase migrations and authenticated data-flow verification remain pending before those phases can be marked complete.
+- Phase 2/3 implementation and local automated checks are complete; applying the Supabase migrations and running the deployed two-user data-flow verifier remain pending before those phases can be marked complete.
+- Phase 4/5 implementation and local automated checks are complete; the deployed live Composio contract and authenticated host walkthrough remain pending before those phases can be marked complete.
 - Evidence is recorded under `plan/evidence/`.
 
 ## Fixed product and architecture decisions

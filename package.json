@@ -24,11 +24,14 @@
     "start": "mcp-use start",
     "deploy": "mcp-use deploy",
     "typecheck": "mcp-use typecheck",
+    "test:unit": "node scripts/run-unit-tests.mjs",
     "verify:protocol": "node scripts/verify-protocol.mjs",
+    "verify:phase2-3": "node scripts/verify-phase2-3.mjs",
     "verify:deployed": "node scripts/verify-deployed.mjs"
   },
   "dependencies": {
     "@mcp-use/client": "^2.4.3",
+    "@modelcontextprotocol/client": "2.3.1",
     "mcp-use": "2.10.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

@@ -3,13 +3,14 @@ create table if not exists public.intake_groups (
   household_id uuid not null references public.households(id) on delete cascade,
   group_budget_max numeric(12, 2) check (group_budget_max is null or group_budget_max >= 0),
   currency_code text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (household_id, id)
 );
 
 create table if not exists public.maintenance_requests (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households(id) on delete cascade,
-  intake_group_id uuid references public.intake_groups(id) on delete set null,
+  intake_group_id uuid,
   title text not null check (char_length(title) between 1 and 120),
   description text not null check (char_length(description) between 1 and 1500),
   room text,
@@ -24,13 +25,15 @@ create table if not exists public.maintenance_requests (
   idempotency_key text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (household_id, idempotency_key)
+  unique (household_id, idempotency_key),
+  unique (household_id, id),
+  foreign key (household_id, intake_group_id) references public.intake_groups(household_id, id) on delete set null
 );
 
 create table if not exists public.service_searches (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households(id) on delete cascade,
-  maintenance_request_id uuid not null references public.maintenance_requests(id) on delete cascade,
+  maintenance_request_id uuid not null,
   source_mode text not null check (source_mode = 'live_taskrabbit'),
   location_snapshot jsonb not null default '{}'::jsonb,
   search_criteria jsonb not null default '{}'::jsonb,
@@ -38,14 +41,16 @@ create table if not exists public.service_searches (
   result_count integer not null default 0 check (result_count >= 0),
   error_code text,
   retrieved_at timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (household_id, id),
+  foreign key (household_id, maintenance_request_id) references public.maintenance_requests(household_id, id) on delete cascade
 );
 
 create table if not exists public.service_options (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households(id) on delete cascade,
-  service_search_id uuid not null references public.service_searches(id) on delete cascade,
-  maintenance_request_id uuid not null references public.maintenance_requests(id) on delete cascade,
+  service_search_id uuid not null,
+  maintenance_request_id uuid not null,
   provider_name text,
   title text not null,
   service_category text not null,
@@ -63,14 +68,17 @@ create table if not exists public.service_options (
   source_payload_sanitized jsonb,
   retrieved_at timestamptz not null,
   expires_at timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (household_id, id),
+  foreign key (household_id, service_search_id) references public.service_searches(household_id, id) on delete cascade,
+  foreign key (household_id, maintenance_request_id) references public.maintenance_requests(household_id, id) on delete cascade
 );
 
 create table if not exists public.booking_handoffs (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households(id) on delete cascade,
-  maintenance_request_id uuid not null references public.maintenance_requests(id) on delete cascade,
-  service_option_id uuid not null references public.service_options(id) on delete cascade,
+  maintenance_request_id uuid not null,
+  service_option_id uuid not null,
   status text not null check (status in ('draft', 'ready', 'opened', 'user_reported_booked', 'user_reported_not_booked', 'user_reported_cancelled', 'user_reported_needs_help', 'expired', 'error')),
   booking_url text not null,
   source_mode text not null check (source_mode = 'live_taskrabbit'),
@@ -78,7 +86,11 @@ create table if not exists public.booking_handoffs (
   opened_at timestamptz,
   outcome_reported_at timestamptz,
   user_reported_note text,
-  idempotency_key text not null unique
+  idempotency_key text not null,
+  unique (household_id, idempotency_key),
+  unique (household_id, id),
+  foreign key (household_id, maintenance_request_id) references public.maintenance_requests(household_id, id) on delete cascade,
+  foreign key (household_id, service_option_id) references public.service_options(household_id, id) on delete cascade
 );
 
 create table if not exists public.maintenance_events (
@@ -90,7 +102,9 @@ create table if not exists public.maintenance_events (
   actor_type text not null check (actor_type in ('user', 'agent', 'system', 'provider')),
   source_mode text not null,
   payload_sanitized jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  foreign key (household_id, maintenance_request_id) references public.maintenance_requests(household_id, id) on delete cascade,
+  foreign key (household_id, booking_handoff_id) references public.booking_handoffs(household_id, id) on delete cascade
 );
 
 create index if not exists intake_groups_household_idx on public.intake_groups(household_id, created_at desc);

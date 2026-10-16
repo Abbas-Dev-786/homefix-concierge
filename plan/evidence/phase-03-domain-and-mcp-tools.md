@@ -18,7 +18,8 @@ Status: implementation complete locally; live database transition and authentica
 - `npm run typecheck`: passed.
 - `npm run build`: passed.
 - `npm run verify:protocol`: passed with 17 discovered tools, MCP `2025-11-25`, persistence readiness configured, and unauthenticated protected tools rejected.
+- `npm run test:unit`: passed with repository idempotency, legal state transitions, handoff state progression, repeated handoff-open behavior, and truthful user-reported outcomes.
 
 ## Required activation
 
-Apply `supabase/migrations/20261016001000_phase3_domain.sql` after the Phase 2 migration. Then verify authenticated ownership, idempotent retries, legal status transitions, and durable state with real isolated test users. Live Taskrabbit behavior remains intentionally unavailable until Phase 4.
+Apply `supabase/migrations/20261016001000_phase3_domain.sql` after the Phase 2 migration. Then run `npm run verify:phase2-3` against the deployed endpoint to verify authenticated ownership, idempotent retries, legal status transitions, and durable state with real isolated test users. Live Taskrabbit behavior remains intentionally unavailable until Phase 4.

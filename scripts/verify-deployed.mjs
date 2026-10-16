@@ -8,6 +8,7 @@ function loadLocalEnv() {
     const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
     if (!match || line.trimStart().startsWith("#")) continue;
     const [, name, rawValue] = match;
+    if (name === "PHASE1_TEST_ACCESS_TOKEN") continue;
     if (process.env[name] !== undefined) continue;
     const value = rawValue.trim().replace(/^"(.*)"$/, "$1");
     process.env[name] = value;
