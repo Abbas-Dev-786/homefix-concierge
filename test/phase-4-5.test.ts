@@ -61,3 +61,10 @@ test("adapter rejects missing required provider fields and unsafe links", async 
     (error: unknown) => error instanceof HomeFixError && error.code === "INTEGRATION_UNAVAILABLE"
   );
 });
+
+test("adapter explains that a Composio consumer key cannot create a Tool Router session", async () => {
+  const adapter = new ComposioTaskrabbitAdapter({ apiKey: "ck_consumer_key" });
+  const status = await adapter.getStatus("user-a");
+  assert.equal(status.status, "error");
+  assert.match(status.reason ?? "", /consumer key/);
+});

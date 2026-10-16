@@ -330,7 +330,17 @@ export function validateTaskrabbitUrl(value: string) {
   return url.toString();
 }
 
+function assertToolRouterApiKey(apiKey: string) {
+  if (apiKey.startsWith("ck_")) {
+    throw new HomeFixError("INTEGRATION_UNAVAILABLE", "The configured Composio key is a consumer key (ck_). Use a Composio project API key (ak_) for the Tool Router session API.", false, "replace_composio_api_key");
+  }
+  if (apiKey.startsWith("uak_")) {
+    throw new HomeFixError("INTEGRATION_UNAVAILABLE", "The configured Composio key is a user key (uak_). Use a project API key (ak_) with this server integration.", false, "replace_composio_api_key");
+  }
+}
+
 async function defaultSessionFactory(apiKey: string, baseUrl: string, timeoutMs: number, userId: string): Promise<ComposioSession> {
+  assertToolRouterApiKey(apiKey);
   let response: Response;
   try {
     response = await fetch(`${baseUrl.replace(/\/$/, "")}/tool_router/session`, {
@@ -342,7 +352,11 @@ async function defaultSessionFactory(apiKey: string, baseUrl: string, timeoutMs:
   } catch {
     throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit could not be reached through Composio.", true, "retry_taskrabbit");
   }
-  if (!response.ok) throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Composio could not create a Taskrabbit session.", response.status >= 500 || response.status === 429, "check_composio_connection");
+  if (!response.ok) {
+    const statusText = response.statusText?.trim();
+    const status = `HTTP ${response.status}${statusText ? ` ${statusText}` : ""}`;
+    throw new HomeFixError("INTEGRATION_UNAVAILABLE", `Composio could not create a Taskrabbit session (${status}).`, response.status >= 500 || response.status === 429, response.status === 401 || response.status === 403 ? "replace_composio_api_key" : "check_composio_connection");
+  }
   const body = await response.json() as JsonObject;
   const mcp = asObject(body.mcp);
   const mcpUrl = text(mcp?.url);

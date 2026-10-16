@@ -71,6 +71,11 @@ const repairInputSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(128).optional(),
 }).strict();
 
+const serviceDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
+  (value) => value >= new Date().toISOString().slice(0, 10),
+  "desiredDate must be today or a future date"
+);
+
 const protectedTool = {
   securitySchemes: oauthSecurity,
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -267,7 +272,7 @@ export function registerHomeFixTools(
     name: "find_service_options",
     title: "Find live Taskrabbit options",
     description: "Check live Taskrabbit availability, pricing, and scoping questions for one persisted repair in a user-confirmed market. Provider results are timestamped and may be empty.",
-    inputSchema: z.object({ requestId: z.string().uuid(), serviceCategory: z.string().trim().min(1).max(120), city: z.string().trim().max(120).optional(), region: z.string().trim().max(120).optional(), postalCode: z.string().trim().max(24).optional(), desiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), desiredTimeWindow: z.string().trim().max(120).optional(), scopingAnswers: z.record(z.string(), z.string().trim().max(500)).optional() }).strict().refine((input) => Boolean(input.city || input.postalCode), "Provide a user-confirmed city or postal code before searching Taskrabbit."),
+    inputSchema: z.object({ requestId: z.string().uuid(), serviceCategory: z.string().trim().min(1).max(120), city: z.string().trim().max(120).optional(), region: z.string().trim().max(120).optional(), postalCode: z.string().trim().max(24).optional(), desiredDate: serviceDateSchema.optional(), desiredTimeWindow: z.string().trim().max(120).optional(), scopingAnswers: z.record(z.string(), z.string().trim().max(500)).optional() }).strict().refine((input) => Boolean(input.city || input.postalCode), "Provide a user-confirmed city or postal code before searching Taskrabbit."),
     outputSchema: z.object({ status: z.enum(["available", "empty"]), searchId: z.string(), options: z.array(z.object({ id: z.string(), title: z.string(), providerName: z.string().nullable(), serviceCategory: z.string(), locationLabel: z.string().nullable(), estimateMin: z.number().nullable(), estimateMax: z.number().nullable(), priceLabel: z.string().nullable(), currencyCode: z.string().nullable(), availabilitySummary: z.string().nullable(), availabilitySlots: z.array(z.unknown()), scopingQuestions: z.array(z.unknown()), taskTemplateId: z.string().nullable(), retrievedAt: z.string(), expiresAt: z.string(), source: z.literal("live_taskrabbit") })), retrievedAt: z.string(), expiresAt: z.string(), source: z.literal("live_taskrabbit") }),
   }, withErrors(async (input, ctx) => {
     const repo = repositoryOrThrow(repository);
