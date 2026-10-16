@@ -16,7 +16,7 @@ The product is a persistent home-repair coordination MCP App. Its primary UI is 
 ## Current implementation status
 
 - Phase 0 local baseline is complete.
-- Phase 1 local protocol/build implementation is complete; live Supabase and Manufact host verification is pending external configuration.
+- Phase 1 local and deployed protocol/OAuth implementation is complete; Inspector/Manufact host rendering and host-action evidence remain pending manual verification.
 - Evidence is recorded under `plan/evidence/`.
 
 ## Fixed product and architecture decisions

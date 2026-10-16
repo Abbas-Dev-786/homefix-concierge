@@ -1,6 +1,6 @@
 # Phase 1 evidence — MCP, View host, and OAuth compatibility spike
 
-Status: local protocol and implementation gates passed. Live Supabase and Manufact host gates remain pending external configuration.
+Status: local and deployed protocol/OAuth gates passed. Host View rendering and host-action checks remain pending manual host evidence.
 
 ## Protocol result
 
@@ -42,6 +42,41 @@ The official protocol client used by the local script does not advertise the MCP
 
 The installed screenshot command also requires the optional `@mcp-use/client` peer, which is absent from the starter. An install attempt could not complete in this workspace and did not change `package.json` or `package-lock.json`. The View was therefore verified by typecheck/build contracts and the emitted `ui://views/compatibility-view.html` binding, while host rendering remains pending.
 
+## Current local verification
+
+On 2026-10-16, with the workspace `.env` loaded without printing its values:
+
+- `npm run typecheck`: passed.
+- `npm run build`: passed.
+- `npm run verify:protocol`: passed with protocol `2025-11-25`, two discovered tools, the `compatibility-view` resource, readiness HTTP 200, and consent HTTP 200.
+- The unauthenticated `verify-identity` call was rejected.
+- The authenticated identity check was not run because the local-only `PHASE1_TEST_ACCESS_TOKEN` variable is not set.
+
+The local baseline check remains available for protocol development; the current workspace `.env` now points at the deployed HTTPS endpoint used below.
+
+## Deployed verification
+
+The deployed verifier was run successfully on 2026-10-16 against the configured public HTTPS endpoint:
+
+```json
+{
+  "status": "passed",
+  "transport": "streamable-http",
+  "negotiatedProtocolVersion": "2025-11-25",
+  "toolCount": 2,
+  "viewResource": "ui://views/compatibility-view.html",
+  "readiness": { "status": 200, "statusText": "ready" },
+  "consent": { "status": 200 },
+  "unauthenticatedProtectedTool": "rejected",
+  "authenticatedIdentity": {
+    "source": "verified-oauth",
+    "userIdPresent": true
+  }
+}
+```
+
+This proves the deployed transport, schema-backed View binding, consent route, unauthenticated protection, and verified Supabase identity. The verifier's MCP client does not advertise the MCP Apps UI extension, so `clientSupportsViews` is expected to be `false`; it does not prove or disprove host rendering.
+
 ## OAuth implementation decision
 
 Keep `mcp-use` as the protocol server. The installed `oauthSupabaseProvider` declaration and implementation provide the required resource-server shape:
@@ -67,10 +102,9 @@ With no Supabase variables it returns an explicit HTTP 503 configuration error. 
 
 ## Host and live OAuth checks
 
-Not run in this workspace because no Supabase project credentials or Manufact deployment URL are configured:
+Still requiring host or end-to-end evidence:
 
 - Supabase OAuth 2.1 authorization and dynamic client registration;
-- asymmetric token verification with a real Supabase access token;
 - Inspector View rendering and View-to-tool call in a host that advertises MCP Apps;
 - Manufact Cloud Chat View rendering;
 - user initiated external-link behavior in the selected deployed host;

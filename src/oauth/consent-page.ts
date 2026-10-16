@@ -37,6 +37,9 @@ export function renderConsentPage(options: {
       dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
       button { margin: 1rem .5rem 0 0; padding: .7rem 1rem; border: 0; border-radius: .6rem; background: #324b3e; color: white; font: inherit; cursor: pointer; }
       button.secondary { background: #e6e3d9; color: #25241f; }
+      form { display: grid; gap: .75rem; margin-top: 1rem; }
+      label { display: grid; gap: .35rem; font-size: .9rem; font-weight: 600; }
+      input { box-sizing: border-box; width: 100%; padding: .7rem; border: 1px solid #c9c5b8; border-radius: .5rem; font: inherit; }
       [hidden] { display: none; }
       .error { color: #9a2d25; }
     </style>
@@ -45,6 +48,11 @@ export function renderConsentPage(options: {
     <main>
       <h1>Authorize HomeFix Concierge</h1>
       <p id="status">Loading authorization details…</p>
+      <form id="sign-in" hidden>
+        <label>Email<input id="email" type="email" autocomplete="username" required /></label>
+        <label>Password<input id="password" type="password" autocomplete="current-password" required /></label>
+        <button id="sign-in-button" type="submit">Sign in to Supabase</button>
+      </form>
       <section id="details" hidden>
         <dl>
           <dt>Application</dt><dd id="client-name">Unknown application</dd>
@@ -65,6 +73,10 @@ export function renderConsentPage(options: {
       const requestedScope = document.querySelector("#requested-scope");
       const approve = document.querySelector("#approve");
       const deny = document.querySelector("#deny");
+      const signIn = document.querySelector("#sign-in");
+      const email = document.querySelector("#email");
+      const password = document.querySelector("#password");
+      const signInButton = document.querySelector("#sign-in-button");
 
       const showError = (message) => {
         status.textContent = message;
@@ -81,7 +93,23 @@ export function renderConsentPage(options: {
           const supabase = createClient(supabaseUrl, supabaseAnonKey);
           const { data: sessionData } = await supabase.auth.getSession();
           if (!sessionData.session) {
-            showError("Sign in to Supabase in this browser, then reopen the authorization link.");
+            status.textContent = "Sign in with a Supabase project user before reviewing access.";
+            signIn.hidden = false;
+            signIn.addEventListener("submit", async (event) => {
+              event.preventDefault();
+              signInButton.disabled = true;
+              status.textContent = "Signing in…";
+              const { error } = await supabase.auth.signInWithPassword({
+                email: email.value,
+                password: password.value,
+              });
+              if (error) {
+                signInButton.disabled = false;
+                showError(error.message);
+                return;
+              }
+              window.location.reload();
+            });
           } else {
             const { data, error } = await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
             if (error) throw error;

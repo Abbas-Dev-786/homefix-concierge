@@ -25,11 +25,20 @@ npm run dev
 npm run typecheck
 npm run build
 npm run verify:protocol
+npm run verify:deployed
 ```
 
 `npm run dev` serves the MCP endpoint at `http://localhost:3000/mcp` and the local Inspector at `http://localhost:3000/mcp/inspector`. The protocol command starts the production build, connects with the official MCP Streamable HTTP client, verifies the negotiated protocol version, lists tools, and calls the schema-backed compatibility probe.
 
 The active temporary tool is `compatibility-probe`, bound to `views/compatibility-view/`. It is deliberately labeled as a spike and contains no household, provider, booking, or seeded user data.
+
+When a temporary Supabase access token is available, the protocol check can also verify the protected identity tool. Set it only in the current shell and never commit it:
+
+```powershell
+$env:PHASE1_TEST_ACCESS_TOKEN = "<temporary access token>"
+npm run verify:protocol
+Remove-Item Env:PHASE1_TEST_ACCESS_TOKEN
+```
 
 ## Environment variables
 
@@ -43,5 +52,5 @@ The same server and View are deployed together through Manufact Cloud:
 npm run deploy
 ```
 
-Deployment and live host evidence are recorded in [`plan/evidence/phase-01-compatibility-spike.md`](plan/evidence/phase-01-compatibility-spike.md).
+For the deployed environment, set `MCP_URL` to the public HTTPS `/mcp` URL and run `npm run verify:deployed`. Deployment and live host evidence are recorded in [`plan/evidence/phase-01-compatibility-spike.md`](plan/evidence/phase-01-compatibility-spike.md).
 

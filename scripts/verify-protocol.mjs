@@ -85,6 +85,61 @@ try {
     throw new Error("compatibility-probe did not return structuredContent");
   }
 
+  const identityTool = tools.tools.find((tool) => tool.name === "verify-identity");
+  let unauthenticatedProtectedTool = "not-configured";
+  let authenticatedIdentity = "not-run";
+  if (identityTool) {
+    let unauthenticatedResult;
+    try {
+      unauthenticatedResult = await client.callTool({
+        name: "verify-identity",
+        arguments: {},
+      });
+    } catch {
+      unauthenticatedResult = { isError: true };
+    }
+    if (!unauthenticatedResult.isError) {
+      throw new Error("verify-identity was callable without authentication");
+    }
+    unauthenticatedProtectedTool = "rejected";
+
+    const accessToken = process.env.PHASE1_TEST_ACCESS_TOKEN?.trim();
+    if (accessToken) {
+      const authenticatedClient = new Client({
+        name: "homefix-phase-1-auth-check",
+        version: "0.1.0",
+      });
+      const authenticatedTransport = new StreamableHTTPClientTransport(
+        new URL(`${baseUrl}/mcp`),
+        { authProvider: { token: async () => accessToken } }
+      );
+      try {
+        await authenticatedClient.connect(authenticatedTransport);
+        const identity = await authenticatedClient.callTool({
+          name: "verify-identity",
+          arguments: {},
+        });
+        const identityData = identity.structuredContent;
+        if (
+          identity.isError ||
+          !identityData ||
+          typeof identityData.userId !== "string" ||
+          identityData.source !== "verified-oauth"
+        ) {
+          throw new Error("Authenticated verify-identity did not return verified OAuth identity");
+        }
+        authenticatedIdentity = {
+          source: identityData.source,
+          userIdPresent: true,
+        };
+      } finally {
+        await authenticatedClient.close().catch(() => {});
+      }
+    } else {
+      authenticatedIdentity = "not-run-missing-PHASE1_TEST_ACCESS_TOKEN";
+    }
+  }
+
   const readiness = await fetch(`${baseUrl}/ready`);
   const readinessBody = await readiness.json();
   const consent = await fetch(`${baseUrl}/oauth/consent?authorization_id=phase1-check`);
@@ -106,6 +161,8 @@ try {
     viewResource: probeTool._meta?.ui?.resourceUri ?? probeTool._meta?.["ui/resourceUri"],
     readiness: { status: readiness.status, body: readinessBody },
     consent: { status: consent.status },
+    unauthenticatedProtectedTool,
+    authenticatedIdentity,
     probeStructuredContent: probe.structuredContent,
   }, null, 2));
 } catch (error) {
