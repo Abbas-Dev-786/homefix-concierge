@@ -40,19 +40,24 @@ loadLocalEnv();
 
 const endpoint = requireHttpsUrl(process.env.MCP_URL ?? "", "MCP_URL");
 const root = rootUrlFor(endpoint);
-const client = new Client({ name: "homefix-phase-1-deployed-check", version: "0.1.0" });
+const client = new Client({ name: "homefix-phase-6-deployed-check", version: "0.1.0" });
 const transport = new StreamableHTTPClientTransport(endpoint);
 
 try {
   await client.connect(transport);
   const tools = await client.listTools();
-  const probeTool = tools.tools.find((tool) => tool.name === "compatibility-probe");
-  if (!probeTool?.outputSchema) throw new Error("Deployed compatibility-probe has no outputSchema");
-  const viewResource = probeTool._meta?.ui?.resourceUri ?? probeTool._meta?.["ui/resourceUri"];
-  if (!viewResource) throw new Error("Deployed compatibility-probe has no View resource binding");
-  const probe = await client.callTool({ name: "compatibility-probe", arguments: { label: "deployed check" } });
-  if (probe.isError || !probe.structuredContent) {
-    throw new Error("Deployed compatibility-probe did not return structuredContent");
+  const dashboardTool = tools.tools.find((tool) => tool.name === "open_homefix_dashboard");
+  if (!dashboardTool?.outputSchema) throw new Error("Deployed open_homefix_dashboard has no outputSchema");
+  const viewResource = dashboardTool._meta?.ui?.resourceUri ?? dashboardTool._meta?.["ui/resourceUri"];
+  if (!viewResource) throw new Error("Deployed open_homefix_dashboard has no View resource binding");
+  let unauthenticatedDashboard;
+  try {
+    unauthenticatedDashboard = await client.callTool({ name: "open_homefix_dashboard", arguments: {} });
+  } catch {
+    unauthenticatedDashboard = { isError: true };
+  }
+  if (!unauthenticatedDashboard.isError) {
+    throw new Error("Deployed open_homefix_dashboard was callable without authentication");
   }
   if (!transport.protocolVersion || transport.protocolVersion < LATEST_PROTOCOL_VERSION) {
     throw new Error(`Deployed protocol ${transport.protocolVersion ?? "unknown"}; required ${LATEST_PROTOCOL_VERSION} or later`);
@@ -75,7 +80,7 @@ try {
 
     const accessToken = process.env.PHASE1_TEST_ACCESS_TOKEN?.trim();
     if (accessToken) {
-      const authenticatedClient = new Client({ name: "homefix-phase-1-deployed-auth-check", version: "0.1.0" });
+      const authenticatedClient = new Client({ name: "homefix-phase-6-deployed-auth-check", version: "0.1.0" });
       const authenticatedTransport = new StreamableHTTPClientTransport(endpoint, {
         authProvider: { token: async () => accessToken },
       });
@@ -113,7 +118,7 @@ try {
     consent: { status: consent.status },
     unauthenticatedProtectedTool,
     authenticatedIdentity,
-    probeStructuredContent: probe.structuredContent,
+    unauthenticatedDashboard: "rejected",
   }, null, 2));
 } finally {
   await client.close().catch(() => {});

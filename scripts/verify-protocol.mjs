@@ -75,30 +75,38 @@ let childOutput = "";
 child.stdout.on("data", (chunk) => { childOutput += chunk.toString(); });
 child.stderr.on("data", (chunk) => { childOutput += chunk.toString(); });
 
-const client = new Client({ name: "homefix-phase-1-protocol-check", version: "0.1.0" });
+const client = new Client({ name: "homefix-phase-6-protocol-check", version: "0.1.0" });
 const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`));
 
 try {
   await waitForHealth(baseUrl, child);
   await client.connect(transport);
   const tools = await client.listTools();
-  const probe = await client.callTool({ name: "compatibility-probe", arguments: { label: "protocol script" } });
   const negotiated = transport.protocolVersion;
-  const probeTool = tools.tools.find((tool) => tool.name === "compatibility-probe");
+  const dashboardTool = tools.tools.find((tool) => tool.name === "open_homefix_dashboard");
   if (!negotiated || negotiated < LATEST_PROTOCOL_VERSION) {
     throw new Error(`Negotiated protocol ${negotiated ?? "unknown"}; required ${LATEST_PROTOCOL_VERSION} or later`);
   }
-  if (!probeTool) {
-    throw new Error("compatibility-probe was not returned by tools/list");
+  if (!dashboardTool) {
+    throw new Error("open_homefix_dashboard was not returned by tools/list");
   }
-  if (!probeTool.outputSchema) {
-    throw new Error("compatibility-probe did not advertise outputSchema");
+  if (!dashboardTool.outputSchema) {
+    throw new Error("open_homefix_dashboard did not advertise outputSchema");
   }
-  if (!probeTool._meta?.ui?.resourceUri && !probeTool._meta?.["ui/resourceUri"]) {
-    throw new Error("compatibility-probe did not advertise an MCP App View resource");
+  if (!dashboardTool._meta?.ui?.resourceUri && !dashboardTool._meta?.["ui/resourceUri"]) {
+    throw new Error("open_homefix_dashboard did not advertise an MCP App View resource");
   }
-  if (probe.isError || !probe.structuredContent) {
-    throw new Error("compatibility-probe did not return structuredContent");
+  let unauthenticatedDashboard;
+  try {
+    unauthenticatedDashboard = await client.callTool({
+      name: "open_homefix_dashboard",
+      arguments: {},
+    });
+  } catch {
+    unauthenticatedDashboard = { isError: true };
+  }
+  if (!unauthenticatedDashboard.isError) {
+    throw new Error("open_homefix_dashboard was callable without authentication");
   }
 
   const identityTool = tools.tools.find((tool) => tool.name === "verify-identity");
@@ -122,7 +130,7 @@ try {
     const accessToken = process.env.PHASE1_TEST_ACCESS_TOKEN?.trim();
     if (accessToken) {
       const authenticatedClient = new Client({
-        name: "homefix-phase-1-auth-check",
+        name: "homefix-phase-6-auth-check",
         version: "0.1.0",
       });
       const authenticatedTransport = new StreamableHTTPClientTransport(
@@ -174,12 +182,12 @@ try {
     negotiatedProtocolVersion: negotiated,
     requiredProtocolVersion: LATEST_PROTOCOL_VERSION,
     toolCount: tools.tools.length,
-    viewResource: probeTool._meta?.ui?.resourceUri ?? probeTool._meta?.["ui/resourceUri"],
+    viewResource: dashboardTool._meta?.ui?.resourceUri ?? dashboardTool._meta?.["ui/resourceUri"],
     readiness: { status: readiness.status, body: readinessBody },
     consent: { status: consent.status },
     unauthenticatedProtectedTool,
     authenticatedIdentity,
-    probeStructuredContent: probe.structuredContent,
+    unauthenticatedDashboard: "rejected",
   }, null, 2));
 } catch (error) {
   console.error(childOutput);

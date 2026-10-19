@@ -1,6 +1,6 @@
 # HomeFix Concierge
 
-HomeFix Concierge is being built as one Manufact MCP App deployment: a TypeScript `mcp-use` server with React MCP App Views. Phase 1 compatibility is complete, including deployed MCP transport, schema-backed View behavior, Supabase OAuth, and manual host verification. HomeFix domain workflows begin in Phase 2.
+HomeFix Concierge is one Manufact MCP App deployment: a TypeScript `mcp-use` server with a React HomeFix dashboard View, Supabase-backed household state, and live Taskrabbit capabilities through Composio. Phases 1–6 are implemented locally; deployed host verification remains an environment-specific step.
 
 ## Local setup
 
@@ -16,7 +16,7 @@ npm install
 copy .env.example .env
 ```
 
-The local compatibility surface runs without credentials. Supabase OAuth and Composio are reported as unavailable until their server-only variables are configured. Never put service-role keys or access tokens in View code.
+The local server can start without credentials, but the authenticated HomeFix dashboard requires Supabase OAuth, persistence, and Composio server-only variables. Never put service-role keys or access tokens in View code.
 
 ## Commands
 
@@ -30,9 +30,9 @@ npm run verify:deployed
 npm run verify:phase2-3
 ```
 
-`npm run dev` serves the MCP endpoint at `http://localhost:3000/mcp` and the local Inspector at `http://localhost:3000/mcp/inspector`. The protocol command starts the production build, connects with the official MCP Streamable HTTP client, verifies the negotiated protocol version, lists tools, and calls the schema-backed compatibility probe.
+`npm run dev` serves the MCP endpoint at `http://localhost:3000/mcp` and the local Inspector at `http://localhost:3000/mcp/inspector`. The protocol command starts the production build, connects with the official MCP Streamable HTTP client, verifies the negotiated protocol version, lists tools, and checks the authenticated dashboard View binding and unauthenticated rejection.
 
-The active compatibility tool is `compatibility-probe`, bound to `views/compatibility-view/`. Authenticated HomeFix tools are registered alongside it when Supabase OAuth is configured. They use only the authenticated household and live Composio Taskrabbit responses; no provider fixtures are bundled.
+The active product entrypoint is `open_homefix_dashboard`, bound to `views/homefix-dashboard/`. The View supports explicit household onboarding, profile persistence, repair intake, real live Taskrabbit searches, comparison, validated handoffs, host-mediated external opening, user-reported outcomes, history, and activity. It uses only authenticated household data and live Composio Taskrabbit responses; no provider fixtures are bundled.
 
 Phase 2 and Phase 3 add authenticated household/profile persistence and typed HomeFix domain tools. Apply the checked-in migrations to the intended Supabase project before using those tools with real data:
 
@@ -68,5 +68,5 @@ The same server and View are deployed together through Manufact Cloud:
 npm run deploy
 ```
 
-For the deployed environment, set `MCP_URL` to the public HTTPS `/mcp` URL and run `npm run verify:deployed`. Deployment and live host evidence are recorded in [`plan/evidence/phase-01-compatibility-spike.md`](plan/evidence/phase-01-compatibility-spike.md).
+For the deployed environment, set `MCP_URL` to the public HTTPS `/mcp` URL and run `npm run verify:deployed`. Local Phase 6 evidence is recorded in [`plan/evidence/phase-06-mcp-app-view.md`](plan/evidence/phase-06-mcp-app-view.md); deployed host evidence should be added after the current deployment is updated.
 

@@ -15,29 +15,10 @@ import { consentPageError, renderConsentPage } from "./src/oauth/consent-page.js
 import { HomeFixRepository } from "./src/repositories/homefix-repository.js";
 import { registerHomeFixTools } from "./src/tools/homefix-tools.js";
 
-const compatibilityInputSchema = z.object({
-  label: z
-    .string()
-    .trim()
-    .max(80)
-    .optional()
-    .describe("Optional label used to identify this compatibility check"),
-});
-
-const compatibilityOutputSchema = z.object({
-  phase: z.literal("phase-1-compatibility-spike"),
-  label: z.string(),
-  transport: z.literal("streamable-http"),
-  protocolVersion: z.literal("2025-11-25"),
-  viewBinding: z.literal("compatibility-view"),
-  clientSupportsViews: z.boolean(),
-  oauth: z.enum(["configured", "not-configured"]),
-});
-
 const serverConfig = {
   name: "homefix-concierge",
   title: "HomeFix Concierge",
-  version: "0.1.0-phase-5",
+  version: "0.1.0-phase-6",
   description: "HomeFix Concierge for household repair intake, live provider discovery, and user-approved booking handoffs.",
   instructions:
     "Coordinate HomeFix repair requests using the authenticated household context. Use live Taskrabbit results only when returned by the integration, show timestamps, ask for explicit user selection, and never claim a repair is booked unless the user reports that outcome.",
@@ -83,44 +64,6 @@ const taskrabbitAdapter = composioConfigured
     })
   : undefined;
 
-export const compatibilityProbe = typedServer.tool(
-  {
-    name: "compatibility-probe",
-    title: "Run compatibility probe",
-    description:
-      "Verify the local MCP transport and the host's MCP App View bridge during the Phase 1 spike.",
-    inputSchema: compatibilityInputSchema,
-    outputSchema: compatibilityOutputSchema,
-    securitySchemes: oauthConfigured ? [{ type: "noauth" as const }] : undefined,
-    view: {
-      name: "compatibility-view",
-      description: "Phase 1 compatibility results for transport, View binding, and host actions.",
-      prefersBorder: false,
-    },
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      openWorldHint: false,
-    },
-  },
-  async ({ label }, ctx) => {
-    const data = {
-      phase: "phase-1-compatibility-spike" as const,
-      label: label?.trim() || "manual check",
-      transport: "streamable-http" as const,
-      protocolVersion: "2025-11-25" as const,
-      viewBinding: "compatibility-view" as const,
-      clientSupportsViews: ctx.client.supportsViews(),
-      oauth: oauthConfigured ? ("configured" as const) : ("not-configured" as const),
-    };
-
-    return {
-      content: [{ type: "text" as const, text: `Compatibility probe completed for ${data.label}.` }],
-      structuredContent: data,
-    };
-  }
-);
-
 export const verifyIdentity = oauthConfigured
   ? typedServer.tool(
       {
@@ -146,9 +89,29 @@ export const verifyIdentity = oauthConfigured
     )
   : undefined;
 
-if (oauthConfigured) {
-  registerHomeFixTools(typedServer, homefixRepository, taskrabbitAdapter);
-}
+const registeredHomeFixTools = oauthConfigured
+  ? registerHomeFixTools(typedServer, homefixRepository, taskrabbitAdapter)
+  : undefined;
+
+type HomeFixToolRefs = NonNullable<typeof registeredHomeFixTools>;
+
+export const createHousehold = registeredHomeFixTools?.createHousehold as HomeFixToolRefs["createHousehold"];
+export const saveHomeProfile = registeredHomeFixTools?.saveHomeProfile as HomeFixToolRefs["saveHomeProfile"];
+export const openHomefixDashboard = registeredHomeFixTools?.openHomefixDashboard as HomeFixToolRefs["openHomefixDashboard"];
+export const getHomeContext = registeredHomeFixTools?.getHomeContext as HomeFixToolRefs["getHomeContext"];
+export const listMaintenanceRequests = registeredHomeFixTools?.listMaintenanceRequests as HomeFixToolRefs["listMaintenanceRequests"];
+export const createRepairGroup = registeredHomeFixTools?.createRepairGroup as HomeFixToolRefs["createRepairGroup"];
+export const createRepairRequest = registeredHomeFixTools?.createRepairRequest as HomeFixToolRefs["createRepairRequest"];
+export const updateMaintenanceStatus = registeredHomeFixTools?.updateMaintenanceStatus as HomeFixToolRefs["updateMaintenanceStatus"];
+export const listSupportedServices = registeredHomeFixTools?.listSupportedServices as HomeFixToolRefs["listSupportedServices"];
+export const findServiceOptions = registeredHomeFixTools?.findServiceOptions as HomeFixToolRefs["findServiceOptions"];
+export const createBookingHandoff = registeredHomeFixTools?.createBookingHandoff as HomeFixToolRefs["createBookingHandoff"];
+export const getTaskrabbitStatus = registeredHomeFixTools?.getTaskrabbitStatus as HomeFixToolRefs["getTaskrabbitStatus"];
+export const compareServiceOptions = registeredHomeFixTools?.compareServiceOptions as HomeFixToolRefs["compareServiceOptions"];
+export const evaluateRepairGroupBudget = registeredHomeFixTools?.evaluateRepairGroupBudget as HomeFixToolRefs["evaluateRepairGroupBudget"];
+export const recordHandoffOpened = registeredHomeFixTools?.recordHandoffOpened as HomeFixToolRefs["recordHandoffOpened"];
+export const getActivity = registeredHomeFixTools?.getActivity as HomeFixToolRefs["getActivity"];
+export const recordBookingOutcome = registeredHomeFixTools?.recordBookingOutcome as HomeFixToolRefs["recordBookingOutcome"];
 
 server.get("/health", (c) =>
   c.json({ status: "ok", service: "homefix-concierge" })

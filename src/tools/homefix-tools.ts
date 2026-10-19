@@ -140,7 +140,7 @@ export function registerHomeFixTools(
   repository: HomeFixRepository | undefined,
   taskrabbit: ComposioTaskrabbitAdapter | undefined
 ) {
-  server.tool({
+  const createHousehold = server.tool({
     ...protectedTool,
     name: "create_household",
     title: "Create my household",
@@ -152,7 +152,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: "Household onboarding is ready." }], structuredContent: await repo.createHousehold(userIdFromContext(ctx)) };
   }));
 
-  server.tool({
+  const saveHomeProfile = server.tool({
     ...protectedTool,
     name: "save_home_profile",
     title: "Save home profile",
@@ -167,7 +167,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: "Home profile saved." }], structuredContent: profile };
   }));
 
-  server.tool({
+  const openHomefixDashboard = server.tool({
     ...protectedTool,
     name: "open_homefix_dashboard",
     title: "Open HomeFix dashboard",
@@ -181,6 +181,7 @@ export function registerHomeFixTools(
       taskrabbit: z.object({ status: z.enum(["available", "unavailable", "error"]), reason: z.string().nullable(), capabilities: z.record(z.string(), z.string()).optional() }),
       source: sourceSchema,
     }),
+    view: { name: "homefix-dashboard" },
   }, withErrors(async (_, ctx) => {
     const userId = userIdFromContext(ctx);
     const dashboard = await repositoryOrThrow(repository).dashboard(userId);
@@ -191,7 +192,7 @@ export function registerHomeFixTools(
     };
   }));
 
-  server.tool({
+  const getHomeContext = server.tool({
     ...protectedTool,
     name: "get_home_context",
     title: "Get home context",
@@ -205,7 +206,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: "Home context loaded." }], structuredContent: { onboardingRequired: false, profile: await repo.getProfile(scope), openRequests: includeOpenTasks ? await repo.listRequests(scope, true) : [], source: "supabase" as const } };
   }));
 
-  server.tool({
+  const listMaintenanceRequests = server.tool({
     ...protectedTool,
     name: "list_maintenance_requests",
     title: "List maintenance requests",
@@ -220,7 +221,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: `${requests.length} maintenance request(s) loaded.` }], structuredContent: { requests, source: "supabase" as const } };
   }));
 
-  server.tool({
+  const createRepairGroup = server.tool({
     ...protectedTool,
     name: "create_repair_group",
     title: "Create repair group",
@@ -235,7 +236,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: "Repair group created." }], structuredContent: group };
   }));
 
-  server.tool({
+  const createRepairRequest = server.tool({
     ...protectedTool,
     name: "create_repair_request",
     title: "Create repair request",
@@ -250,7 +251,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: `Repair request ${request.title} is saved.` }], structuredContent: request };
   }));
 
-  server.tool({
+  const updateMaintenanceStatus = server.tool({
     ...protectedTool,
     name: "update_maintenance_status",
     title: "Update maintenance status",
@@ -268,7 +269,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: `Maintenance status is now ${status}.` }], structuredContent: request };
   }));
 
-  server.tool({
+  const listSupportedServices = server.tool({
     ...protectedTool,
     name: "list_supported_services",
     title: "List supported Taskrabbit services",
@@ -281,7 +282,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: `${result.services.length} live Taskrabbit service(s) found.` }], structuredContent: result };
   }));
 
-  server.tool({
+  const findServiceOptions = server.tool({
     ...protectedTool,
     name: "find_service_options",
     title: "Find live Taskrabbit options",
@@ -315,7 +316,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: options.length ? `${options.length} live Taskrabbit option(s) found.` : "Taskrabbit returned no matching options." }], structuredContent: { status: options.length ? "available" as const : "empty" as const, searchId: search.id, options, retrievedAt: result.retrievedAt, expiresAt: result.expiresAt, source: "live_taskrabbit" as const } };
   }));
 
-  server.tool({
+  const createBookingHandoff = server.tool({
     ...protectedTool,
     name: "create_booking_handoff",
     title: "Prepare Taskrabbit booking handoff",
@@ -366,7 +367,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: "A live Taskrabbit handoff is ready. Ask the user to click Continue to Taskrabbit before opening it." }], structuredContent: handoff };
   }));
 
-  server.tool({
+  const getTaskrabbitStatus = server.tool({
     ...protectedTool,
     name: "get_taskrabbit_status",
     title: "Get Taskrabbit status",
@@ -381,7 +382,7 @@ export function registerHomeFixTools(
     };
   }));
 
-  server.tool({
+  const compareServiceOptions = server.tool({
     ...protectedTool,
     name: "compare_service_options",
     title: "Compare service options",
@@ -404,7 +405,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: `${ranked.length} persisted provider option(s) compared.` }], structuredContent: { requestId, options: ranked, source: "supabase" as const } };
   }));
 
-  server.tool({
+  const evaluateRepairGroupBudget = server.tool({
     ...protectedTool,
     name: "evaluate_repair_group_budget",
     title: "Evaluate repair group budget",
@@ -419,7 +420,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: result.status === "known" ? "The repair group total was calculated from live option estimates." : "The repair group total is unknown because a complete common-currency estimate is unavailable." }], structuredContent: result };
   }));
 
-  server.tool({
+  const recordHandoffOpened = server.tool({
     ...protectedTool,
     name: "record_handoff_opened",
     title: "Record handoff opened",
@@ -434,7 +435,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: "The external handoff was opened by the user. Booking is not confirmed." }], structuredContent: handoff };
   }));
 
-  server.tool({
+  const getActivity = server.tool({
     ...protectedTool,
     name: "get_activity",
     title: "Get HomeFix activity",
@@ -450,7 +451,7 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: `${events.length} persisted HomeFix event(s) loaded.` }], structuredContent: { events, source: "supabase" as const } };
   }));
 
-  server.tool({
+  const recordBookingOutcome = server.tool({
     ...protectedTool,
     name: "record_booking_outcome",
     title: "Record booking outcome",
@@ -471,4 +472,24 @@ export function registerHomeFixTools(
     const result = await repo.recordBookingOutcome(scope, handoffId, handoffStatus, maintenanceStatus, note);
     return { content: [{ type: "text", text: "The user-reported booking outcome was saved." }], structuredContent: result };
   }));
+
+  return {
+    createHousehold,
+    saveHomeProfile,
+    openHomefixDashboard,
+    getHomeContext,
+    listMaintenanceRequests,
+    createRepairGroup,
+    createRepairRequest,
+    updateMaintenanceStatus,
+    listSupportedServices,
+    findServiceOptions,
+    createBookingHandoff,
+    getTaskrabbitStatus,
+    compareServiceOptions,
+    evaluateRepairGroupBudget,
+    recordHandoffOpened,
+    getActivity,
+    recordBookingOutcome,
+  };
 }
