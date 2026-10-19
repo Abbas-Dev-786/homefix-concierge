@@ -22,6 +22,7 @@ coverage/
 .env.development.local
 .env.test.local
 .env.production.local
+.oauth-token.env
 
 # Logs
 *.log

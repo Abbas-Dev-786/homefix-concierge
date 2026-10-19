@@ -54,6 +54,8 @@ npm run verify:protocol
 Remove-Item Env:PHASE1_TEST_ACCESS_TOKEN
 ```
 
+To obtain a correctly scoped token through the live Supabase OAuth 2.1 flow, load `MCP_URL` from `.env` and run `npm run oauth:token`. The script uses PKCE, opens the live authorization page, waits for a localhost callback, and writes the token to the ignored `.oauth-token.env` file. Load it into PowerShell using the command printed by the script; do not paste the token into chat or commit the file.
+
 ## Environment variables
 
 See [.env.example](.env.example) for names and safe placeholders. The Phase 1 OAuth provider reads `SUPABASE_URL`; the consent page also needs `SUPABASE_ANON_KEY`. Supabase OAuth 2.1, dynamic client registration, asymmetric JWT signing, Site URL, and the `/oauth/consent` authorization path must be configured in the Supabase project before a live OAuth check can pass. Phase 4/5 also uses `COMPOSIO_API_KEY`, optional `COMPOSIO_API_BASE_URL`, and optional `TASKRABBIT_TOOL_MAP_JSON` on the server only.

@@ -50,6 +50,8 @@ export type AvailabilityInput = ServiceDiscoveryInput & {
   desiredDate?: string;
   desiredTimeWindow?: string;
   scopingAnswers?: Record<string, string>;
+  taskTitle?: string;
+  taskDescription?: string;
 };
 
 export type BookingLinkInput = {
@@ -354,6 +356,43 @@ function numericRange(object: JsonObject): [number | null, number | null] {
   return range ? [Number(range[1]), Number(range[2])] : [null, null];
 }
 
+function normalizedKey(value: string) {
+  return value.replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function questionAnswer(question: AvailabilityOption["scopingQuestions"][number], input: AvailabilityInput) {
+  const answers = Object.entries(input.scopingAnswers ?? {});
+  const questionKeys = [question.param, question.id].filter((value): value is string => Boolean(value)).map(normalizedKey);
+  const explicit = answers.find(([key]) => questionKeys.includes(normalizedKey(key)))?.[1];
+  if (explicit) return explicit;
+
+  const questionText = normalizedKey(`${question.param ?? ""} ${question.id} ${question.question}`);
+  if (/(description|details|issue|problem|taskdescription|additionaldetails)/i.test(questionText) && input.taskDescription) {
+    return [input.taskTitle, input.taskDescription].filter(Boolean).join("\n\n");
+  }
+  if (/(title|taskname|servicename|jobtitle)/i.test(questionText) && input.taskTitle) return input.taskTitle;
+  if (/(date|servicedate|desireddate|appointmentdate)/i.test(questionText) && input.desiredDate) return input.desiredDate;
+  if (/(time|timewindow|desiredtime|servicetime|appointmenttime)/i.test(questionText) && input.desiredTimeWindow) return input.desiredTimeWindow;
+  return undefined;
+}
+
+function buildQuestionnaire(
+  scopingQuestions: AvailabilityOption["scopingQuestions"],
+  providerQuestionnaire: Array<{ param: string; question: string; answer: string }>,
+  input: AvailabilityInput,
+) {
+  const existing = new Map(providerQuestionnaire.map((item) => [normalizedKey(item.param), item]));
+  const ordered = scopingQuestions.flatMap((question) => {
+    const param = question.param ?? question.id;
+    const existingItem = existing.get(normalizedKey(param));
+    if (existingItem) return [existingItem];
+    const answer = questionAnswer(question, input);
+    return answer ? [{ param, question: question.question, answer }] : [];
+  });
+  const known = new Set(ordered.map((item) => normalizedKey(item.param)));
+  return [...ordered, ...providerQuestionnaire.filter((item) => !known.has(normalizedKey(item.param)))];
+}
+
 function normalizeOptions(payload: unknown, input: AvailabilityInput): AvailabilityOption[] {
   const items = arrayFromPayload(payload, ["options", "serviceOptions", "service_options", "results", "matches", "items"]);
   const candidates = items.length ? items : (asObject(payload) ? [payload] : []);
@@ -396,7 +435,7 @@ function normalizeOptions(payload: unknown, input: AvailabilityInput): Availabil
         }
       : undefined;
     const questionnaireValue = valueAt(object, ["questionnaire", "scopingAnswers", "scoping_answers"]);
-    const questionnaire = Array.isArray(questionnaireValue)
+    const providerQuestionnaire = Array.isArray(questionnaireValue)
       ? questionnaireValue.flatMap((rawQuestion) => {
           const value = asObject(rawQuestion);
           const question = text(valueAt(value ?? {}, ["question", "text"]));
@@ -409,6 +448,7 @@ function normalizeOptions(payload: unknown, input: AvailabilityInput): Availabil
           const answer = Object.entries(answers).find(([key]) => key === question.param || key === question.id)?.[1];
           return answer ? [{ param: question.param ?? question.id, question: question.question, answer }] : [];
         });
+    const questionnaire = buildQuestionnaire(scopingQuestions, providerQuestionnaire, input);
     return [{
       title: text(valueAt(object, ["title", "name", "service", "serviceLabel", "taskName"])) ?? "Taskrabbit service option",
       providerName: text(valueAt(object, ["providerName", "provider_name", "provider", "taskerName"])),

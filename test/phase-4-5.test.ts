@@ -73,6 +73,8 @@ test("adapter maps the current Taskrabbit schemas and deep-link questionnaire", 
   const availability = await adapter.checkAvailability("user-a", {
     postalCode: "411001",
     serviceCategory: "assemble furniture",
+    taskTitle: "Leaking kitchen tap",
+    taskDescription: "The kitchen tap is actively spraying water.",
     scopingAnswers: { item_count: "2" },
   });
   assert.deepEqual(calls[0]?.arguments, { postalCode: "411001", service: "assemble furniture" });
@@ -92,6 +94,33 @@ test("adapter maps the current Taskrabbit schemas and deep-link questionnaire", 
     questionnaire: [{ param: "item_count", question: "How many items?", answer: "2" }],
     location: { address: "Pune, MH", postal_code: "411001", lat: 18.5204, lng: 73.8567 },
   });
+});
+
+test("adapter pre-fills provider questionnaire fields from the HomeFix repair", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
+  ];
+  const client = {
+    callTool: async () => ({ structuredContent: { available: true, categoryId: "plumbing_help", location: { address: "New York City, NY", postal_code: "10001", lat: 40.7484, lng: -73.9967 }, scopingQuestions: [
+      { id: "generic_task_description", param: "description", question: "Tell us the details of your task", optional: false },
+      { id: "service_date", param: "service_date", question: "What date do you need?", optional: true },
+      { id: "service_time", param: "time_window", question: "What time works?", optional: true },
+    ] } }),
+  } as unknown as ComposioSession["client"];
+  const adapter = new ComposioTaskrabbitAdapter({ sessionFactory: async () => ({ client, tools }) });
+  const result = await adapter.checkAvailability("user-a", {
+    postalCode: "10001",
+    serviceCategory: "plumbing",
+    taskTitle: "Leaking kitchen tap",
+    taskDescription: "The kitchen tap is actively spraying water.",
+    desiredDate: "2026-10-20",
+    desiredTimeWindow: "11:30 AM-12:30 PM",
+  });
+  assert.deepEqual(result.options[0]?.bookingContext.questionnaire, [
+    { param: "description", question: "Tell us the details of your task", answer: "Leaking kitchen tap\n\nThe kitchen tap is actively spraying water." },
+    { param: "service_date", question: "What date do you need?", answer: "2026-10-20" },
+    { param: "time_window", question: "What time works?", answer: "11:30 AM-12:30 PM" },
+  ]);
 });
 
 test("adapter uses the official session execute result shape", async () => {

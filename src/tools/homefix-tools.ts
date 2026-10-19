@@ -299,10 +299,10 @@ export function registerHomeFixTools(
     await repo.updateRequestStatus(scope, request.id, "searching", undefined, "system", "agent", "live_taskrabbit");
     const normalizedScopingAnswers = normalizeScopingAnswers(input.scopingAnswers);
     const locationSnapshot = { city: input.city ?? "", region: input.region ?? "", postalCode: input.postalCode ?? "" };
-    const searchCriteria = { serviceCategory: input.serviceCategory, city: input.city ?? null, region: input.region ?? null, postalCode: input.postalCode ?? null, desiredDate: input.desiredDate ?? null, desiredTimeWindow: input.desiredTimeWindow ?? null, scopingAnswers: normalizedScopingAnswers ?? null };
+    const searchCriteria = { serviceCategory: input.serviceCategory, taskTitle: request.title, taskDescription: request.description, city: input.city ?? null, region: input.region ?? null, postalCode: input.postalCode ?? null, desiredDate: input.desiredDate ?? null, desiredTimeWindow: input.desiredTimeWindow ?? null, scopingAnswers: normalizedScopingAnswers ?? null };
     let result;
     try {
-      result = await adapter.checkAvailability(userId, { ...input, scopingAnswers: normalizedScopingAnswers });
+      result = await adapter.checkAvailability(userId, { ...input, taskTitle: request.title, taskDescription: request.description, scopingAnswers: normalizedScopingAnswers });
     } catch (error) {
       await repo.createServiceSearch(scope, { requestId: request.id, locationSnapshot, searchCriteria, status: "error", resultCount: 0, errorCode: error instanceof HomeFixError ? error.code : "INTEGRATION_UNAVAILABLE" });
       await repo.updateRequestStatus(scope, request.id, "needs_attention", "Live Taskrabbit search failed; no provider options were created.", "system", "agent", "live_taskrabbit").catch(() => {});
@@ -339,6 +339,8 @@ export function registerHomeFixTools(
       if (!criteria || typeof criteria.serviceCategory !== "string") throw new HomeFixError("INVALID_STATE", "This provider result is stale and cannot be refreshed automatically. Run a new live search.", false, "refresh_options");
       const refreshed = await adapter.checkAvailability(userId, {
         serviceCategory: criteria.serviceCategory,
+        taskTitle: typeof criteria.taskTitle === "string" ? criteria.taskTitle : undefined,
+        taskDescription: typeof criteria.taskDescription === "string" ? criteria.taskDescription : undefined,
         city: typeof criteria.city === "string" ? criteria.city : undefined,
         region: typeof criteria.region === "string" ? criteria.region : undefined,
         postalCode: typeof criteria.postalCode === "string" ? criteria.postalCode : undefined,
