@@ -36,7 +36,7 @@ function currentTaskrabbitAdapter(calls: Array<{ name: string; arguments: Record
     callTool: async ({ name, arguments: input }: { name: string; arguments: Record<string, unknown> }) => {
       calls.push({ name, arguments: input });
       if (name === "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY") {
-        return { structuredContent: { options: [{ title: "Assembly", categoryId: "furniture_assembly", scopingQuestions: [{ param: "item_count", question: "How many items?" }] }] } };
+        return { structuredContent: { options: [{ title: "Assembly", categoryId: "furniture_assembly", location: { address: "Pune, MH", postal_code: "411001", lat: 18.5204, lng: 73.8567 }, scopingQuestions: [{ param: "item_count", question: "How many items?" }] }] } };
       }
       return { structuredContent: { deepLink: "https://www.taskrabbit.com/book" } };
     },
@@ -78,17 +78,38 @@ test("adapter maps the current Taskrabbit schemas and deep-link questionnaire", 
   assert.deepEqual(calls[0]?.arguments, { postalCode: "411001", service: "assemble furniture" });
   assert.equal(availability.options[0]?.taskTemplateId, "furniture_assembly");
   assert.deepEqual(availability.options[0]?.bookingContext.questionnaire, [{ param: "item_count", question: "How many items?", answer: "2" }]);
+  assert.deepEqual(availability.options[0]?.bookingContext.location, { address: "Pune, MH", postal_code: "411001", lat: 18.5204, lng: 73.8567 });
 
   await adapter.createBookingLink("user-a", {
     categoryId: "furniture_assembly",
     locale: "en-US",
     questionnaire: availability.options[0]?.bookingContext.questionnaire,
+    location: availability.options[0]?.bookingContext.location,
   });
   assert.deepEqual(calls[1]?.arguments, {
     locale: "en-US",
     categoryId: "furniture_assembly",
     questionnaire: [{ param: "item_count", question: "How many items?", answer: "2" }],
+    location: { address: "Pune, MH", postal_code: "411001", lat: 18.5204, lng: 73.8567 },
   });
+});
+
+test("adapter uses the official session execute result shape", async () => {
+  const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_LIST_SUPPORTED_SERVICES", description: "List Taskrabbit services", inputSchema: { type: "object", properties: { postalCode: { type: "string" } } } },
+  ];
+  const session: ComposioSession = {
+    tools,
+    execute: async (name, args) => {
+      calls.push({ name, arguments: args });
+      return { data: { services: [{ categoryId: "furniture_assembly", label: "Furniture Assembly" }] }, error: null, resultType: "completed" };
+    },
+  };
+  const adapter = new ComposioTaskrabbitAdapter({ sessionFactory: async () => session });
+  const result = await adapter.listSupportedServices("user-a", { postalCode: "10001" });
+  assert.equal(result.services[0]?.name, "Furniture Assembly");
+  assert.deepEqual(calls[0]?.arguments, { postalCode: "10001" });
 });
 
 test("adapter rejects missing required provider fields and unsafe links", async () => {
@@ -101,6 +122,26 @@ test("adapter rejects missing required provider fields and unsafe links", async 
   await assert.rejects(
     () => adapter.createBookingLink("user-a", { taskTemplateId: "template-1" }),
     (error: unknown) => error instanceof HomeFixError && error.code === "INTEGRATION_UNAVAILABLE"
+  );
+});
+
+test("adapter explains missing Composio tool execution permission", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_LIST_SUPPORTED_SERVICES", inputSchema: { type: "object", properties: { postalCode: { type: "string" } } } },
+  ];
+  const client = {
+    callTool: async () => {
+      throw Object.assign(new Error("Error executing the tool"), {
+        cause: { status: 403, error: { slug: "APIKey_InsufficientPermissions", message: "This API key does not have tool_execution write access" } },
+      });
+    },
+  } as unknown as ComposioSession["client"];
+  const adapter = new ComposioTaskrabbitAdapter({ sessionFactory: async () => ({ client, tools }) });
+  await assert.rejects(
+    () => adapter.listSupportedServices("user-a", { postalCode: "10001" }),
+    (error: unknown) => error instanceof HomeFixError
+      && error.message.includes("Session tool execution write access")
+      && error.nextAction === "grant_composio_session_execution_permissions"
   );
 });
 

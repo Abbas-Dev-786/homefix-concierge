@@ -1,6 +1,7 @@
 import { HomeFixError } from "../domain/errors.js";
 import { assertMaintenanceTransition, type MaintenanceStatus } from "../domain/maintenance-state.js";
 import { SupabaseRestClient } from "../integrations/supabase-rest.js";
+import type { TaskrabbitLocation } from "../integrations/composio-taskrabbit.js";
 
 export type HomeProfileInput = {
   propertyType?: string;
@@ -57,6 +58,7 @@ export type ServiceOptionRecordInput = {
     categoryId: string | null;
     locale: string;
     questionnaire: Array<{ param: string; question: string; answer: string }>;
+    location?: TaskrabbitLocation;
   };
   retrievedAt: string;
   expiresAt: string;

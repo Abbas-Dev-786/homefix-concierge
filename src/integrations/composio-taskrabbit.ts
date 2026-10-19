@@ -1,4 +1,4 @@
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import type { Client } from "@modelcontextprotocol/client";
 import { Composio, SessionPreset } from "@composio/core";
 
 import { HomeFixError } from "../domain/errors.js";
@@ -33,8 +33,9 @@ type DiscoveredTool = {
 };
 
 export type ComposioSession = {
-  client: Client;
+  client?: Client;
   tools: DiscoveredTool[];
+  execute?: (toolName: string, arguments_: JsonObject) => Promise<unknown>;
 };
 
 export type ServiceDiscoveryInput = {
@@ -56,6 +57,14 @@ export type BookingLinkInput = {
   categoryId?: string;
   locale?: string;
   questionnaire?: Array<Record<string, string>>;
+  location?: TaskrabbitLocation;
+};
+
+export type TaskrabbitLocation = {
+  address: string;
+  postal_code: string;
+  lat: number;
+  lng: number;
 };
 
 export type IntegrationCapability = "listServices" | "checkAvailability" | "createDeepLink";
@@ -89,6 +98,7 @@ export type AvailabilityOption = {
     categoryId: string | null;
     locale: string;
     questionnaire: Array<{ param: string; question: string; answer: string }>;
+    location?: TaskrabbitLocation;
   };
 };
 
@@ -157,6 +167,39 @@ function extractPayload(result: { structuredContent?: unknown; content?: Array<{
     }
   }
   return null;
+}
+
+function extractSessionPayload(result: unknown): unknown {
+  const object = asObject(result);
+  if (!object) return result;
+  if (object.resultType === "failed" || object.error) return object;
+  return Object.prototype.hasOwnProperty.call(object, "data") ? object.data : result;
+}
+
+function diagnosticText(value: unknown, depth = 0): string {
+  if (depth > 4 || value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return [value.message, diagnosticText(value.cause, depth + 1)].filter(Boolean).join(" ");
+  if (Array.isArray(value)) return value.map((item) => diagnosticText(item, depth + 1)).filter(Boolean).join(" ");
+  if (typeof value !== "object") return "";
+  const object = value as Record<string, unknown>;
+  return ["message", "error", "details", "cause", "body", "text", "data"]
+    .map((key) => diagnosticText(object[key], depth + 1))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function isComposioPermissionError(value: unknown) {
+  return /APIKey_InsufficientPermissions|tool_execution|session.?tool.?execution|permission|required for POST|403|forbidden/i.test(diagnosticText(value));
+}
+
+function composioPermissionError() {
+  return new HomeFixError(
+    "INTEGRATION_UNAVAILABLE",
+    "Composio cannot execute Taskrabbit tools. Grant this project API key Session tool execution write access and Session management write access.",
+    false,
+    "grant_composio_session_execution_permissions"
+  );
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -270,6 +313,9 @@ function mapArguments(tool: DiscoveredTool, capability: IntegrationCapability, i
     if (categoryKey && categoryId) args[categoryKey] = categoryId;
     if (localeKey) args[localeKey] = bookingInput.locale ?? "en-US";
     if (questionnaireKey && bookingInput.questionnaire) args[questionnaireKey] = bookingInput.questionnaire;
+    // The live Taskrabbit implementation currently requires this even though
+    // it is missing from the published deep-link schema.
+    if (bookingInput.location) args.location = bookingInput.location;
   }
 
   for (const required of schema?.required ?? []) {
@@ -298,6 +344,11 @@ function numericRange(object: JsonObject): [number | null, number | null] {
   const min = number(valueAt(object, ["estimateMin", "estimate_min", "minPrice", "min_price", "minimumPrice"]));
   const max = number(valueAt(object, ["estimateMax", "estimate_max", "maxPrice", "max_price", "maximumPrice"]));
   if (min !== null || max !== null) return [min, max];
+  const pricing = asObject(valueAt(object, ["pricing", "price"]));
+  const rateRange = asObject(pricing ? valueAt(pricing, ["rateRange", "rate_range"]) : undefined);
+  const rateMin = number(rateRange ? valueAt(rateRange, ["low", "min", "minimum"]) : undefined);
+  const rateMax = number(rateRange ? valueAt(rateRange, ["high", "max", "maximum"]) : undefined);
+  if (rateMin !== null || rateMax !== null) return [rateMin, rateMax];
   const label = text(valueAt(object, ["price", "priceRange", "price_range", "estimate"]));
   const range = label?.match(/\$?([0-9]+(?:\.[0-9]{1,2})?)\s*(?:-|to)\s*\$?([0-9]+(?:\.[0-9]{1,2})?)/i);
   return range ? [Number(range[1]), Number(range[2])] : [null, null];
@@ -327,10 +378,23 @@ function normalizeOptions(payload: unknown, input: AvailabilityInput): Availabil
           const questionText = text(valueAt(value, ["question", "text", "label"]));
           if (!questionText) return [];
           const id = text(valueAt(value, ["id", "key", "param"])) ?? questionText;
-          return [{ id, param: text(valueAt(value, ["param", "key", "id"])) ?? id, question: questionText, required: valueAt(value, ["required"]) === true ? true : undefined }];
+          return [{ id, param: text(valueAt(value, ["param", "key", "id"])) ?? id, question: questionText, required: valueAt(value, ["required"]) === true || valueAt(value, ["optional"]) === false ? true : undefined }];
         })
       : [];
     const categoryId = text(valueAt(object, ["categoryId", "category_id", "taskTemplateId", "task_template_id", "templateId", "taskId"]));
+    const locationValue = asObject(valueAt(object, ["location"]));
+    const location = locationValue
+      && text(valueAt(locationValue, ["address"]))
+      && text(valueAt(locationValue, ["postal_code", "postalCode"]))
+      && typeof valueAt(locationValue, ["lat", "latitude"]) === "number"
+      && typeof valueAt(locationValue, ["lng", "longitude"]) === "number"
+      ? {
+          address: text(valueAt(locationValue, ["address"])) as string,
+          postal_code: text(valueAt(locationValue, ["postal_code", "postalCode"])) as string,
+          lat: valueAt(locationValue, ["lat", "latitude"]) as number,
+          lng: valueAt(locationValue, ["lng", "longitude"]) as number,
+        }
+      : undefined;
     const questionnaireValue = valueAt(object, ["questionnaire", "scopingAnswers", "scoping_answers"]);
     const questionnaire = Array.isArray(questionnaireValue)
       ? questionnaireValue.flatMap((rawQuestion) => {
@@ -346,19 +410,22 @@ function normalizeOptions(payload: unknown, input: AvailabilityInput): Availabil
           return answer ? [{ param: question.param ?? question.id, question: question.question, answer }] : [];
         });
     return [{
-      title: text(valueAt(object, ["title", "name", "service", "taskName"])) ?? "Taskrabbit service option",
+      title: text(valueAt(object, ["title", "name", "service", "serviceLabel", "taskName"])) ?? "Taskrabbit service option",
       providerName: text(valueAt(object, ["providerName", "provider_name", "provider", "taskerName"])),
       serviceCategory: text(valueAt(object, ["serviceCategory", "service_category", "category"])) ?? input.serviceCategory,
       locationLabel: text(valueAt(object, ["locationLabel", "location", "market"])) ?? locationLabel(input),
       estimateMin,
       estimateMax,
-      priceLabel: text(valueAt(object, ["priceLabel", "price_label", "price", "estimate", "priceRange"])),
-      currencyCode: text(valueAt(object, ["currencyCode", "currency_code", "currency"])),
-      availabilitySummary: text(valueAt(object, ["availabilitySummary", "availability_summary", "availability", "summary"])),
+      priceLabel: text(valueAt(object, ["priceLabel", "price_label", "price", "estimate", "priceRange"]))
+        ?? text(valueAt(asObject(valueAt(object, ["pricing"])) ?? {}, ["description"])),
+      currencyCode: text(valueAt(object, ["currencyCode", "currency_code", "currency"]))
+        ?? text(valueAt(asObject(valueAt(object, ["pricing"])) ?? {}, ["currency"])),
+      availabilitySummary: text(valueAt(object, ["availabilitySummary", "availability_summary", "summary"]))
+        ?? (valueAt(object, ["available"]) === true ? "Available" : valueAt(object, ["available"]) === false ? "Not available" : null),
       availabilitySlots,
       scopingQuestions,
       taskTemplateId: categoryId,
-      bookingContext: { categoryId, locale: "en-US", questionnaire },
+      bookingContext: { categoryId, locale: "en-US", questionnaire, ...(location ? { location } : {}) },
     }];
   });
 }
@@ -394,7 +461,6 @@ function assertToolRouterApiKey(apiKey: string) {
 
 async function defaultSessionFactory(apiKey: string, baseUrl: string, timeoutMs: number, userId: string): Promise<ComposioSession> {
   assertToolRouterApiKey(apiKey);
-  let sessionMcp: unknown;
   try {
     const composio = new Composio({
       apiKey,
@@ -407,35 +473,25 @@ async function defaultSessionFactory(apiKey: string, baseUrl: string, timeoutMs:
       sessionPreset: SessionPreset.DIRECT_TOOLS,
       mcp: true,
     }), timeoutMs);
-    sessionMcp = session.mcp;
+    const sdkTools = await withTimeout(session.tools(), timeoutMs);
+    const tools: DiscoveredTool[] = [];
+    for (const rawTool of sdkTools) {
+      const toolObject = asObject(rawTool);
+      const functionObject = asObject(toolObject?.function) ?? toolObject;
+      const name = text(functionObject ? valueAt(functionObject, ["name"]) : undefined);
+      if (!name) continue;
+      tools.push({
+        name,
+        description: text(functionObject ? valueAt(functionObject, ["description"]) : undefined) ?? undefined,
+        inputSchema: (functionObject ? valueAt(functionObject, ["parameters"]) : undefined) as JsonSchema | undefined,
+      });
+    }
+    return { tools, execute: (toolName, arguments_) => session.execute(toolName, arguments_) };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (/permission|session_management|403|forbidden/i.test(message)) {
+    if (isComposioPermissionError(error)) {
       throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Composio cannot create a Taskrabbit session. Grant the project API key Session management write access and Session tool execution access.", false, "grant_composio_session_permissions");
     }
     throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit could not be reached through Composio.", true, "retry_taskrabbit");
-  }
-  const mcp = asObject(sessionMcp);
-  const mcpUrl = text(mcp?.url);
-  if (!mcpUrl) throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Composio did not return a Taskrabbit MCP endpoint.", true, "retry_taskrabbit");
-  const mcpHeaders = asObject(mcp?.headers) ?? {};
-  const client = new Client({ name: "homefix-taskrabbit-adapter", version: "0.1.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(mcpUrl), {
-    requestInit: { headers: Object.fromEntries(Object.entries(mcpHeaders).filter(([, value]) => typeof value === "string")) as Record<string, string>, redirect: "error" },
-  });
-  try {
-    await client.connect(transport);
-    const tools: DiscoveredTool[] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await client.listTools(cursor ? { cursor } : undefined);
-      tools.push(...page.tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema as JsonSchema })));
-      cursor = page.nextCursor;
-    } while (cursor);
-    return { client, tools };
-  } catch {
-    await client.close().catch(() => {});
-    throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Composio Taskrabbit tool discovery failed.", true, "retry_taskrabbit");
   }
 }
 
@@ -508,14 +564,28 @@ export class ComposioTaskrabbitAdapter {
     const tool = this.capabilities(session)[capability];
     if (!tool) throw new HomeFixError("INTEGRATION_UNAVAILABLE", `Taskrabbit capability ${capability} is unavailable.`, false, "check_taskrabbit_status");
     const args = mapArguments(tool, capability, input);
-    let result;
+    let result: unknown;
     try {
+      if (session.execute) {
+        result = await withTimeout(session.execute(tool.name, args), this.options.timeoutMs ?? 12000);
+        if (isComposioPermissionError(result)) throw composioPermissionError();
+        const sessionResult = asObject(result);
+        if (sessionResult?.resultType === "failed" || sessionResult?.error) {
+          throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit could not complete that live request.", true, "retry_taskrabbit");
+        }
+        return extractSessionPayload(result);
+      }
+      if (!session.client) throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit execution is not configured.", false, "configure_composio_api_key");
       result = await withTimeout(session.client.callTool({ name: tool.name, arguments: args }), this.options.timeoutMs ?? 12000);
     } catch (error) {
       if (error instanceof HomeFixError) throw error;
+      if (isComposioPermissionError(error)) throw composioPermissionError();
       throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit could not complete that live request.", true, "retry_taskrabbit");
     }
-    if (result.isError) throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit could not complete that live request.", true, "retry_taskrabbit");
+    if (asObject(result)?.isError) {
+      if (isComposioPermissionError(result)) throw composioPermissionError();
+      throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit could not complete that live request.", true, "retry_taskrabbit");
+    }
     return extractPayload(result as { structuredContent?: unknown; content?: Array<{ type: string; text?: string }> });
   }
 

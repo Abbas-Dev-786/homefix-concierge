@@ -345,6 +345,7 @@ export function registerHomeFixTools(
       categoryId,
       locale: bookingContext && typeof bookingContext.locale === "string" ? bookingContext.locale : "en-US",
       questionnaire: bookingContext && Array.isArray(bookingContext.questionnaire) ? bookingContext.questionnaire : [],
+      location: bookingContext && bookingContext.location && typeof bookingContext.location === "object" ? bookingContext.location as { address: string; postal_code: string; lat: number; lng: number } : undefined,
       taskTemplateId: selected.taskTemplateId ?? undefined,
     });
     const handoff = await repo.createBookingHandoff(scope, requestId, serviceOptionId, link.bookingUrl, idempotencyKey, link.retrievedAt);
