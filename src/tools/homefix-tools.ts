@@ -79,6 +79,17 @@ const serviceDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
 const taskrabbitLocation = (input: { city?: string; region?: string; postalCode?: string }) =>
   Boolean(input.postalCode || (input.city && input.region));
 
+const scopingAnswerSchema = z.union([
+  z.string().trim().max(500),
+  z.boolean(),
+  z.number().finite(),
+]);
+
+function normalizeScopingAnswers(answers: Record<string, string | boolean | number> | undefined) {
+  if (!answers) return undefined;
+  return Object.fromEntries(Object.entries(answers).map(([key, value]) => [key, typeof value === "string" ? value : String(value)]));
+}
+
 const protectedTool = {
   securitySchemes: oauthSecurity,
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -176,7 +187,7 @@ export function registerHomeFixTools(
     const taskrabbitStatus = taskrabbit ? await taskrabbit.getStatus(userId) : { status: "unavailable" as const, reason: "Live Taskrabbit capability is not configured.", capabilities: {} };
     return {
       content: [{ type: "text", text: dashboard.onboardingRequired ? "HomeFix onboarding is required." : "HomeFix dashboard loaded." }],
-      structuredContent: { ...dashboard, taskrabbit: taskrabbitStatus },
+      structuredContent: { ...dashboard, taskrabbit: { ...taskrabbitStatus, reason: taskrabbitStatus.reason ?? null } },
     };
   }));
 
@@ -275,7 +286,7 @@ export function registerHomeFixTools(
     name: "find_service_options",
     title: "Find live Taskrabbit options",
     description: "Check live Taskrabbit availability, pricing, and scoping questions for one persisted repair in a user-confirmed market. Provider results are timestamped and may be empty.",
-    inputSchema: z.object({ requestId: z.string().uuid(), serviceCategory: z.string().trim().min(1).max(120), city: z.string().trim().max(120).optional(), region: z.string().trim().max(120).optional(), postalCode: z.string().trim().regex(/^\d{5}$/, "postalCode must be a 5-digit US postal code").optional(), desiredDate: serviceDateSchema.optional(), desiredTimeWindow: z.string().trim().max(120).optional(), scopingAnswers: z.record(z.string(), z.string().trim().max(500)).optional() }).strict().refine(taskrabbitLocation, "Provide either a city and state/region or a 5-digit postal code before searching Taskrabbit."),
+    inputSchema: z.object({ requestId: z.string().uuid(), serviceCategory: z.string().trim().min(1).max(120), city: z.string().trim().max(120).optional(), region: z.string().trim().max(120).optional(), postalCode: z.string().trim().regex(/^\d{5}$/, "postalCode must be a 5-digit US postal code").optional(), desiredDate: serviceDateSchema.optional(), desiredTimeWindow: z.string().trim().max(120).optional(), scopingAnswers: z.record(z.string(), scopingAnswerSchema).optional() }).strict().refine(taskrabbitLocation, "Provide either a city and state/region or a 5-digit postal code before searching Taskrabbit."),
     outputSchema: z.object({ status: z.enum(["available", "empty"]), searchId: z.string(), options: z.array(z.object({ id: z.string(), title: z.string(), providerName: z.string().nullable(), serviceCategory: z.string(), locationLabel: z.string().nullable(), estimateMin: z.number().nullable(), estimateMax: z.number().nullable(), priceLabel: z.string().nullable(), currencyCode: z.string().nullable(), availabilitySummary: z.string().nullable(), availabilitySlots: z.array(z.unknown()), scopingQuestions: z.array(z.unknown()), taskTemplateId: z.string().nullable(), retrievedAt: z.string(), expiresAt: z.string(), source: z.literal("live_taskrabbit") })), retrievedAt: z.string(), expiresAt: z.string(), source: z.literal("live_taskrabbit") }),
   }, withErrors(async (input, ctx) => {
     const repo = repositoryOrThrow(repository);
@@ -286,11 +297,12 @@ export function registerHomeFixTools(
     const request = await repo.getRequest(scope, input.requestId);
     if (!request) throw new HomeFixError("NOT_FOUND", "That maintenance request was not found in your household.", false, "refresh_dashboard");
     await repo.updateRequestStatus(scope, request.id, "searching", undefined, "system", "agent", "live_taskrabbit");
+    const normalizedScopingAnswers = normalizeScopingAnswers(input.scopingAnswers);
     const locationSnapshot = { city: input.city ?? "", region: input.region ?? "", postalCode: input.postalCode ?? "" };
-    const searchCriteria = { serviceCategory: input.serviceCategory, city: input.city ?? null, region: input.region ?? null, postalCode: input.postalCode ?? null, desiredDate: input.desiredDate ?? null, desiredTimeWindow: input.desiredTimeWindow ?? null, scopingAnswers: input.scopingAnswers ?? null };
+    const searchCriteria = { serviceCategory: input.serviceCategory, city: input.city ?? null, region: input.region ?? null, postalCode: input.postalCode ?? null, desiredDate: input.desiredDate ?? null, desiredTimeWindow: input.desiredTimeWindow ?? null, scopingAnswers: normalizedScopingAnswers ?? null };
     let result;
     try {
-      result = await adapter.checkAvailability(userId, input);
+      result = await adapter.checkAvailability(userId, { ...input, scopingAnswers: normalizedScopingAnswers });
     } catch (error) {
       await repo.createServiceSearch(scope, { requestId: request.id, locationSnapshot, searchCriteria, status: "error", resultCount: 0, errorCode: error instanceof HomeFixError ? error.code : "INTEGRATION_UNAVAILABLE" });
       await repo.updateRequestStatus(scope, request.id, "needs_attention", "Live Taskrabbit search failed; no provider options were created.", "system", "agent", "live_taskrabbit").catch(() => {});
