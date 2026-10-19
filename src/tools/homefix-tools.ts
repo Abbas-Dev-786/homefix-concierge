@@ -76,6 +76,9 @@ const serviceDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
   "desiredDate must be today or a future date"
 );
 
+const taskrabbitLocation = (input: { city?: string; region?: string; postalCode?: string }) =>
+  Boolean(input.postalCode || (input.city && input.region));
+
 const protectedTool = {
   securitySchemes: oauthSecurity,
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -259,7 +262,7 @@ export function registerHomeFixTools(
     name: "list_supported_services",
     title: "List supported Taskrabbit services",
     description: "Ask the live Composio Taskrabbit capability which services are supported in the user-confirmed market. Do not infer coverage.",
-    inputSchema: z.object({ city: z.string().trim().max(120).optional(), region: z.string().trim().max(120).optional(), postalCode: z.string().trim().max(24).optional(), serviceQuery: z.string().trim().max(120).optional() }).strict().refine((input) => Boolean(input.city || input.postalCode), "Provide a user-confirmed city or postal code before searching Taskrabbit."),
+    inputSchema: z.object({ city: z.string().trim().max(120).optional(), region: z.string().trim().max(120).optional(), postalCode: z.string().trim().regex(/^\d{5}$/, "postalCode must be a 5-digit US postal code").optional(), serviceQuery: z.string().trim().max(120).optional() }).strict().refine(taskrabbitLocation, "Provide either a city and state/region or a 5-digit postal code before searching Taskrabbit."),
     outputSchema: z.object({ services: z.array(z.object({ name: z.string(), description: z.string().nullable() })), retrievedAt: z.string(), source: z.literal("live_taskrabbit") }),
   }, withErrors(async (input, ctx) => {
     const adapter = taskrabbitOrThrow(taskrabbit);
@@ -272,7 +275,7 @@ export function registerHomeFixTools(
     name: "find_service_options",
     title: "Find live Taskrabbit options",
     description: "Check live Taskrabbit availability, pricing, and scoping questions for one persisted repair in a user-confirmed market. Provider results are timestamped and may be empty.",
-    inputSchema: z.object({ requestId: z.string().uuid(), serviceCategory: z.string().trim().min(1).max(120), city: z.string().trim().max(120).optional(), region: z.string().trim().max(120).optional(), postalCode: z.string().trim().max(24).optional(), desiredDate: serviceDateSchema.optional(), desiredTimeWindow: z.string().trim().max(120).optional(), scopingAnswers: z.record(z.string(), z.string().trim().max(500)).optional() }).strict().refine((input) => Boolean(input.city || input.postalCode), "Provide a user-confirmed city or postal code before searching Taskrabbit."),
+    inputSchema: z.object({ requestId: z.string().uuid(), serviceCategory: z.string().trim().min(1).max(120), city: z.string().trim().max(120).optional(), region: z.string().trim().max(120).optional(), postalCode: z.string().trim().regex(/^\d{5}$/, "postalCode must be a 5-digit US postal code").optional(), desiredDate: serviceDateSchema.optional(), desiredTimeWindow: z.string().trim().max(120).optional(), scopingAnswers: z.record(z.string(), z.string().trim().max(500)).optional() }).strict().refine(taskrabbitLocation, "Provide either a city and state/region or a 5-digit postal code before searching Taskrabbit."),
     outputSchema: z.object({ status: z.enum(["available", "empty"]), searchId: z.string(), options: z.array(z.object({ id: z.string(), title: z.string(), providerName: z.string().nullable(), serviceCategory: z.string(), locationLabel: z.string().nullable(), estimateMin: z.number().nullable(), estimateMax: z.number().nullable(), priceLabel: z.string().nullable(), currencyCode: z.string().nullable(), availabilitySummary: z.string().nullable(), availabilitySlots: z.array(z.unknown()), scopingQuestions: z.array(z.unknown()), taskTemplateId: z.string().nullable(), retrievedAt: z.string(), expiresAt: z.string(), source: z.literal("live_taskrabbit") })), retrievedAt: z.string(), expiresAt: z.string(), source: z.literal("live_taskrabbit") }),
   }, withErrors(async (input, ctx) => {
     const repo = repositoryOrThrow(repository);
@@ -335,8 +338,15 @@ export function registerHomeFixTools(
       await repo.createServiceOptions(scope, refreshed.options.map((option) => ({ ...option, serviceSearchId: freshSearch.id, requestId, retrievedAt: refreshed.retrievedAt, expiresAt: refreshed.expiresAt })));
       throw new HomeFixError("INVALID_STATE", "The selected Taskrabbit result expired. Fresh options were retrieved; compare and select one again.", false, "compare_fresh_options");
     }
-    if (!selected.taskTemplateId) throw new HomeFixError("INTEGRATION_UNAVAILABLE", "The selected Taskrabbit option has no provider task template ID for link generation.", false, "choose_another_option");
-    const link = await adapter.createBookingLink(userId, { taskTemplateId: selected.taskTemplateId });
+    const bookingContext = selected.bookingContext && typeof selected.bookingContext === "object" ? selected.bookingContext : null;
+    const categoryId = bookingContext && typeof bookingContext.categoryId === "string" ? bookingContext.categoryId : selected.taskTemplateId;
+    if (!categoryId) throw new HomeFixError("INTEGRATION_UNAVAILABLE", "The selected Taskrabbit option has no provider category ID for link generation.", false, "choose_another_option");
+    const link = await adapter.createBookingLink(userId, {
+      categoryId,
+      locale: bookingContext && typeof bookingContext.locale === "string" ? bookingContext.locale : "en-US",
+      questionnaire: bookingContext && Array.isArray(bookingContext.questionnaire) ? bookingContext.questionnaire : [],
+      taskTemplateId: selected.taskTemplateId ?? undefined,
+    });
     const handoff = await repo.createBookingHandoff(scope, requestId, serviceOptionId, link.bookingUrl, idempotencyKey, link.retrievedAt);
     return { content: [{ type: "text", text: "A live Taskrabbit handoff is ready. Ask the user to click Continue to Taskrabbit before opening it." }], structuredContent: handoff };
   }));

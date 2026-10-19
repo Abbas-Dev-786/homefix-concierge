@@ -26,6 +26,24 @@ function fakeAdapter(payloads: Record<string, unknown>) {
   });
 }
 
+function currentTaskrabbitAdapter(calls: Array<{ name: string; arguments: Record<string, unknown> }>) {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_LIST_SUPPORTED_SERVICES", description: "List Taskrabbit services available in a location", inputSchema: { type: "object", properties: { city: { type: "string" }, state: { type: "string" }, postalCode: { type: "string" } }, anyOf: [{ required: ["city", "state"] }, { required: ["postalCode"] }] } },
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Checks availability, pricing, and scoping questions", inputSchema: { type: "object", properties: { city: { type: "string" }, state: { type: "string" }, postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"], anyOf: [{ required: ["city", "state"] }, { required: ["postalCode"] }] } },
+    { name: "TASKRABBIT_MCP_GENERATE_DEEP_LINK", description: "Generate a pre-filled Taskrabbit booking deep link", inputSchema: { type: "object", properties: { locale: { type: "string" }, categoryId: { type: "string" }, questionnaire: { type: "array" } }, required: ["locale", "categoryId", "questionnaire"] } },
+  ];
+  const client = {
+    callTool: async ({ name, arguments: input }: { name: string; arguments: Record<string, unknown> }) => {
+      calls.push({ name, arguments: input });
+      if (name === "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY") {
+        return { structuredContent: { options: [{ title: "Assembly", categoryId: "furniture_assembly", scopingQuestions: [{ param: "item_count", question: "How many items?" }] }] } };
+      }
+      return { structuredContent: { deepLink: "https://www.taskrabbit.com/book" } };
+    },
+  } as unknown as ComposioSession["client"];
+  return new ComposioTaskrabbitAdapter({ sessionFactory: async () => ({ client, tools }) });
+}
+
 test("provider results expire at exactly fifteen minutes", () => {
   assert.equal(isFreshProviderResult(new Date(now - 14 * 60 * 1000 - 999).toISOString(), now), true);
   assert.equal(isFreshProviderResult(new Date(now - 15 * 60 * 1000).toISOString(), now), false);
@@ -47,6 +65,30 @@ test("adapter normalizes live services, options, and booking links", async () =>
   assert.equal(options.options[0]?.estimateMax, 120);
   const link = await adapter.createBookingLink("user-a", { taskTemplateId: "template-1" });
   assert.equal(link.bookingUrl, "https://www.taskrabbit.com/tasks/template-1");
+});
+
+test("adapter maps the current Taskrabbit schemas and deep-link questionnaire", async () => {
+  const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+  const adapter = currentTaskrabbitAdapter(calls);
+  const availability = await adapter.checkAvailability("user-a", {
+    postalCode: "411001",
+    serviceCategory: "assemble furniture",
+    scopingAnswers: { item_count: "2" },
+  });
+  assert.deepEqual(calls[0]?.arguments, { postalCode: "411001", service: "assemble furniture" });
+  assert.equal(availability.options[0]?.taskTemplateId, "furniture_assembly");
+  assert.deepEqual(availability.options[0]?.bookingContext.questionnaire, [{ param: "item_count", question: "How many items?", answer: "2" }]);
+
+  await adapter.createBookingLink("user-a", {
+    categoryId: "furniture_assembly",
+    locale: "en-US",
+    questionnaire: availability.options[0]?.bookingContext.questionnaire,
+  });
+  assert.deepEqual(calls[1]?.arguments, {
+    locale: "en-US",
+    categoryId: "furniture_assembly",
+    questionnaire: [{ param: "item_count", question: "How many items?", answer: "2" }],
+  });
 });
 
 test("adapter rejects missing required provider fields and unsafe links", async () => {

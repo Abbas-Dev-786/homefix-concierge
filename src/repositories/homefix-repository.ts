@@ -53,6 +53,11 @@ export type ServiceOptionRecordInput = {
   availabilitySlots: unknown[];
   scopingQuestions: unknown[];
   taskTemplateId: string | null;
+  bookingContext?: {
+    categoryId: string | null;
+    locale: string;
+    questionnaire: Array<{ param: string; question: string; answer: string }>;
+  };
   retrievedAt: string;
   expiresAt: string;
 };
@@ -108,6 +113,7 @@ function requestFromRow(row: Row) {
 }
 
 function optionFromRow(row: Row) {
+  const bookingContext = row.source_payload_sanitized?.bookingContext;
   return {
     id: row.id,
     searchId: row.service_search_id,
@@ -124,6 +130,7 @@ function optionFromRow(row: Row) {
     availabilitySlots: row.availability_slots ?? [],
     scopingQuestions: row.scoping_questions ?? [],
     taskTemplateId: row.task_template_id ?? null,
+    bookingContext: bookingContext && typeof bookingContext === "object" ? bookingContext : null,
     retrievedAt: row.retrieved_at,
     expiresAt: row.expires_at ?? null,
     source: "live_taskrabbit" as const,
@@ -360,6 +367,7 @@ export class HomeFixRepository {
         availability_slots: input.availabilitySlots,
         scoping_questions: input.scopingQuestions,
         task_template_id: input.taskTemplateId,
+        source_payload_sanitized: input.bookingContext ? { bookingContext: input.bookingContext } : null,
         source_mode: "live_taskrabbit",
         retrieved_at: input.retrievedAt,
         expires_at: input.expiresAt,

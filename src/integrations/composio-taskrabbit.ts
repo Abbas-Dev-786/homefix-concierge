@@ -1,8 +1,19 @@
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { Composio, SessionPreset } from "@composio/core";
 
 import { HomeFixError } from "../domain/errors.js";
 
 const TASKRABBIT_TOOLKIT = "taskrabbit_mcp";
+const TASKRABBIT_TOOL_SLUGS = [
+  "TASKRABBIT_MCP_LIST_SUPPORTED_SERVICES",
+  "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY",
+  "TASKRABBIT_MCP_GENERATE_DEEP_LINK",
+] as const;
+const TASKRABBIT_CAPABILITY_SLUGS: Record<IntegrationCapability, string> = {
+  listServices: TASKRABBIT_TOOL_SLUGS[0],
+  checkAvailability: TASKRABBIT_TOOL_SLUGS[1],
+  createDeepLink: TASKRABBIT_TOOL_SLUGS[2],
+};
 const FRESHNESS_MS = 15 * 60 * 1000;
 const allowedTaskrabbitHosts = new Set(["taskrabbit.com", "www.taskrabbit.com"]);
 
@@ -12,6 +23,7 @@ type JsonSchema = {
   properties?: Record<string, JsonSchema>;
   required?: string[];
   items?: JsonSchema;
+  anyOf?: Array<{ required?: string[] }>;
 };
 
 type DiscoveredTool = {
@@ -40,7 +52,10 @@ export type AvailabilityInput = ServiceDiscoveryInput & {
 };
 
 export type BookingLinkInput = {
-  taskTemplateId: string;
+  taskTemplateId?: string;
+  categoryId?: string;
+  locale?: string;
+  questionnaire?: Array<Record<string, string>>;
 };
 
 export type IntegrationCapability = "listServices" | "checkAvailability" | "createDeepLink";
@@ -68,8 +83,13 @@ export type AvailabilityOption = {
   currencyCode: string | null;
   availabilitySummary: string | null;
   availabilitySlots: Array<{ start?: string; end?: string; label?: string }>;
-  scopingQuestions: Array<{ id: string; question: string; required?: boolean }>;
+  scopingQuestions: Array<{ id: string; param?: string; question: string; required?: boolean }>;
   taskTemplateId: string | null;
+  bookingContext: {
+    categoryId: string | null;
+    locale: string;
+    questionnaire: Array<{ param: string; question: string; answer: string }>;
+  };
 };
 
 export type AvailabilityResult = {
@@ -157,6 +177,8 @@ function toolText(tool: DiscoveredTool) {
 }
 
 function pickCapability(tools: DiscoveredTool[], capability: IntegrationCapability): DiscoveredTool | null {
+  const exact = tools.filter((tool) => tool.name === TASKRABBIT_CAPABILITY_SLUGS[capability]);
+  if (exact.length === 1) return exact[0];
   const matches = tools.filter((tool) => {
     const haystack = toolText(tool);
     if (capability === "listServices") return haystack.includes("list") && haystack.includes("service") && (haystack.includes("supported") || haystack.includes("location"));
@@ -191,6 +213,10 @@ function findProperty(schema: JsonSchema | undefined, aliases: string[]): string
   const keys = Object.keys(properties);
   const normalized = aliases.map((alias) => alias.replace(/[^a-z0-9]/gi, "").toLowerCase());
   return keys.find((key) => normalized.includes(key.replace(/[^a-z0-9]/gi, "").toLowerCase())) ?? null;
+}
+
+function hasValue(args: JsonObject, key: string) {
+  return args[key] !== undefined && args[key] !== null && args[key] !== "";
 }
 
 function locationLabel(input: ServiceDiscoveryInput) {
@@ -236,14 +262,23 @@ function mapArguments(tool: DiscoveredTool, capability: IntegrationCapability, i
     if (answersKey && availabilityInput.scopingAnswers) args[answersKey] = availabilityInput.scopingAnswers;
   }
   if (capability === "createDeepLink") {
-    const templateKey = findProperty(schema, ["taskTemplateId", "task_template_id", "templateId", "taskId"]);
-    if (templateKey && "taskTemplateId" in input) args[templateKey] = input.taskTemplateId;
+    const categoryKey = findProperty(schema, ["categoryId", "category_id", "taskTemplateId", "task_template_id", "templateId", "taskId"]);
+    const localeKey = findProperty(schema, ["locale", "language", "localeCode"]);
+    const questionnaireKey = findProperty(schema, ["questionnaire", "questions", "scopingAnswers", "scoping_answers"]);
+    const bookingInput = input as BookingLinkInput;
+    const categoryId = bookingInput.categoryId ?? bookingInput.taskTemplateId;
+    if (categoryKey && categoryId) args[categoryKey] = categoryId;
+    if (localeKey) args[localeKey] = bookingInput.locale ?? "en-US";
+    if (questionnaireKey && bookingInput.questionnaire) args[questionnaireKey] = bookingInput.questionnaire;
   }
 
   for (const required of schema?.required ?? []) {
-    if (args[required] === undefined || args[required] === "") {
+    if (!hasValue(args, required)) {
       throw new HomeFixError("INTEGRATION_UNAVAILABLE", `Taskrabbit capability schema requires unsupported field ${required}.`, false, "provide_supported_taskrabbit_fields");
     }
+  }
+  if (schema?.anyOf?.length && !schema.anyOf.some((alternative) => (alternative.required ?? []).every((required) => hasValue(args, required)))) {
+    throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit requires either a city and state or a postal code for this request.", false, "provide_taskrabbit_location");
   }
   return args;
 }
@@ -290,9 +325,26 @@ function normalizeOptions(payload: unknown, input: AvailabilityInput): Availabil
           const value = asObject(question);
           if (!value) return [];
           const questionText = text(valueAt(value, ["question", "text", "label"]));
-          return questionText ? [{ id: text(valueAt(value, ["id", "key"])) ?? questionText, question: questionText, required: valueAt(value, ["required"]) === true ? true : undefined }] : [];
+          if (!questionText) return [];
+          const id = text(valueAt(value, ["id", "key", "param"])) ?? questionText;
+          return [{ id, param: text(valueAt(value, ["param", "key", "id"])) ?? id, question: questionText, required: valueAt(value, ["required"]) === true ? true : undefined }];
         })
       : [];
+    const categoryId = text(valueAt(object, ["categoryId", "category_id", "taskTemplateId", "task_template_id", "templateId", "taskId"]));
+    const questionnaireValue = valueAt(object, ["questionnaire", "scopingAnswers", "scoping_answers"]);
+    const questionnaire = Array.isArray(questionnaireValue)
+      ? questionnaireValue.flatMap((rawQuestion) => {
+          const value = asObject(rawQuestion);
+          const question = text(valueAt(value ?? {}, ["question", "text"]));
+          const answer = text(valueAt(value ?? {}, ["answer", "value"]));
+          const param = text(valueAt(value ?? {}, ["param", "key", "id"]));
+          return question && answer && param ? [{ param, question, answer }] : [];
+        })
+      : scopingQuestions.flatMap((question) => {
+          const answers = input.scopingAnswers ?? {};
+          const answer = Object.entries(answers).find(([key]) => key === question.param || key === question.id)?.[1];
+          return answer ? [{ param: question.param ?? question.id, question: question.question, answer }] : [];
+        });
     return [{
       title: text(valueAt(object, ["title", "name", "service", "taskName"])) ?? "Taskrabbit service option",
       providerName: text(valueAt(object, ["providerName", "provider_name", "provider", "taskerName"])),
@@ -305,7 +357,8 @@ function normalizeOptions(payload: unknown, input: AvailabilityInput): Availabil
       availabilitySummary: text(valueAt(object, ["availabilitySummary", "availability_summary", "availability", "summary"])),
       availabilitySlots,
       scopingQuestions,
-      taskTemplateId: text(valueAt(object, ["taskTemplateId", "task_template_id", "templateId", "taskId"])),
+      taskTemplateId: categoryId,
+      bookingContext: { categoryId, locale: "en-US", questionnaire },
     }];
   });
 }
@@ -341,30 +394,34 @@ function assertToolRouterApiKey(apiKey: string) {
 
 async function defaultSessionFactory(apiKey: string, baseUrl: string, timeoutMs: number, userId: string): Promise<ComposioSession> {
   assertToolRouterApiKey(apiKey);
-  let response: Response;
+  let sessionMcp: unknown;
   try {
-    response = await fetch(`${baseUrl.replace(/\/$/, "")}/tool_router/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify({ user_id: userId, toolkits: [TASKRABBIT_TOOLKIT], mcp: true }),
-      signal: AbortSignal.timeout(timeoutMs),
+    const composio = new Composio({
+      apiKey,
+      baseURL: normalizeComposioBaseUrl(baseUrl),
+      allowTracking: false,
     });
-  } catch {
+    const session = await withTimeout(composio.sessions.create(userId, {
+      toolkits: [TASKRABBIT_TOOLKIT],
+      tools: { [TASKRABBIT_TOOLKIT]: { enable: [...TASKRABBIT_TOOL_SLUGS] } },
+      sessionPreset: SessionPreset.DIRECT_TOOLS,
+      mcp: true,
+    }), timeoutMs);
+    sessionMcp = session.mcp;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/permission|session_management|403|forbidden/i.test(message)) {
+      throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Composio cannot create a Taskrabbit session. Grant the project API key Session management write access and Session tool execution access.", false, "grant_composio_session_permissions");
+    }
     throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit could not be reached through Composio.", true, "retry_taskrabbit");
   }
-  if (!response.ok) {
-    const statusText = response.statusText?.trim();
-    const status = `HTTP ${response.status}${statusText ? ` ${statusText}` : ""}`;
-    throw new HomeFixError("INTEGRATION_UNAVAILABLE", `Composio could not create a Taskrabbit session (${status}).`, response.status >= 500 || response.status === 429, response.status === 401 || response.status === 403 ? "replace_composio_api_key" : "check_composio_connection");
-  }
-  const body = await response.json() as JsonObject;
-  const mcp = asObject(body.mcp);
+  const mcp = asObject(sessionMcp);
   const mcpUrl = text(mcp?.url);
   if (!mcpUrl) throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Composio did not return a Taskrabbit MCP endpoint.", true, "retry_taskrabbit");
   const mcpHeaders = asObject(mcp?.headers) ?? {};
   const client = new Client({ name: "homefix-taskrabbit-adapter", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(new URL(mcpUrl), {
-    requestInit: { headers: { "x-api-key": apiKey, ...Object.fromEntries(Object.entries(mcpHeaders).filter(([, value]) => typeof value === "string")) as Record<string, string> }, redirect: "error" },
+    requestInit: { headers: Object.fromEntries(Object.entries(mcpHeaders).filter(([, value]) => typeof value === "string")) as Record<string, string>, redirect: "error" },
   });
   try {
     await client.connect(transport);
@@ -382,6 +439,17 @@ async function defaultSessionFactory(apiKey: string, baseUrl: string, timeoutMs:
   }
 }
 
+function normalizeComposioBaseUrl(value: string) {
+  const trimmed = value.trim();
+  try {
+    const url = new URL(trimmed);
+    if (/\/api\/v3(?:\.1)?\/?$/.test(url.pathname)) url.pathname = url.pathname.replace(/\/api\/v3(?:\.1)?\/?$/, "");
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return trimmed.replace(/\/api\/v3(?:\.1)?\/?$/, "").replace(/\/$/, "");
+  }
+}
+
 export class ComposioTaskrabbitAdapter {
   private readonly sessions = new Map<string, Promise<ComposioSession>>();
   private readonly toolMap: Partial<Record<IntegrationCapability, string>>;
@@ -391,7 +459,7 @@ export class ComposioTaskrabbitAdapter {
     this.toolMap = parseToolMap(options.toolMapJson);
     this.sessionFactory = options.sessionFactory ?? ((userId) => defaultSessionFactory(
       options.apiKey ?? "",
-      options.baseUrl ?? "https://backend.composio.dev/api/v3.1",
+      options.baseUrl ?? "https://backend.composio.dev",
       options.timeoutMs ?? 12000,
       userId,
     ));

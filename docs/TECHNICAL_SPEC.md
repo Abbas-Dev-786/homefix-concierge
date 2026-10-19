@@ -273,7 +273,7 @@ Use the current Composio TypeScript SDK documentation. The public quickstart dem
 
 ```ts
 const composio = new Composio({ apiKey: process.env.COMPOSIO_API_KEY });
-const session = await composio.create(configuredUserId, {
+const session = await composio.sessions.create(configuredUserId, {
   toolkits: ["taskrabbit_mcp"],
   mcp: true,
 });
@@ -282,7 +282,7 @@ const session = await composio.create(configuredUserId, {
 // Call tools discovered from tools/list.
 ```
 
-This is a pattern, not a promise that every import or method signature is frozen. Verify the installed SDK API and its TypeScript types.
+`composio.sessions.create` is the canonical current session entrypoint; `composio.create` remains a compatibility alias. A scoped project key must have Session management write access and Session tool execution access. The SDK base URL is the API origin (for example, `https://backend.composio.dev`), not an `/api/v3.1` path.
 
 ### 5.4 Capability and schema discovery
 

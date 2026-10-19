@@ -2,7 +2,7 @@
   "name": "alexa",
   "type": "module",
   "engines": {
-    "node": ">=22.22.2"
+    "node": ">=22.22.3"
   },
   "version": "1.0.0",
   "description": "an mcp-use server with React views for MCP Apps",
@@ -30,6 +30,7 @@
     "verify:deployed": "node scripts/verify-deployed.mjs"
   },
   "dependencies": {
+    "@composio/core": "^0.25.0",
     "@mcp-use/client": "^2.4.3",
     "@modelcontextprotocol/client": "2.3.1",
     "mcp-use": "2.10.0",

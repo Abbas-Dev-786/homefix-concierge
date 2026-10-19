@@ -4,17 +4,17 @@
 
 Implemented locally on 2026-10-16.
 
-- Added a per-verified-user Composio Tool Router session using the documented `taskrabbit_mcp` toolkit.
+- Added a per-verified-user Composio Tool Router session using `@composio/core`'s canonical `sessions.create` API and the documented `taskrabbit_mcp` toolkit.
 - Discovers the live MCP tool list and maps the three required capabilities: supported services, availability/pricing/scoping, and booking deep links.
 - Supports explicit `TASKRABBIT_TOOL_MAP_JSON` mappings and marks ambiguous or unsupported capabilities unavailable.
 - Normalizes only returned provider fields, preserves retrieval timestamps, applies a strict less-than-15-minute freshness rule, and validates HTTPS Taskrabbit links against an exact hostname allowlist.
-- Added bounded outbound calls, sanitized integration errors, and adapter tests for freshness, normalization, missing fields, empty results, and unsafe URLs.
+- Added bounded outbound calls, sanitized integration errors, current Taskrabbit schema mapping including deep-link questionnaire fields, and adapter tests for freshness, normalization, missing fields, empty results, and unsafe URLs.
 
 ## Local checks
 
 `npm run typecheck` passed.
 
-`npm run test:unit` passed: 9 tests.
+`npm run test:unit` passed: 11 tests.
 
 `npm run build` passed.
 
