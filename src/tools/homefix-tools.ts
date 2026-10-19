@@ -95,6 +95,20 @@ const protectedTool = {
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
 };
 
+const exportedRowSchema = z.record(z.string(), z.unknown());
+const householdExportSchema = z.object({
+  household: exportedRowSchema.nullable(),
+  householdMembers: z.array(exportedRowSchema),
+  homeProfiles: z.array(exportedRowSchema),
+  intakeGroups: z.array(exportedRowSchema),
+  maintenanceRequests: z.array(exportedRowSchema),
+  serviceSearches: z.array(exportedRowSchema),
+  serviceOptions: z.array(exportedRowSchema),
+  bookingHandoffs: z.array(exportedRowSchema),
+  maintenanceEvents: z.array(exportedRowSchema),
+  source: sourceSchema,
+});
+
 function userIdFromContext(ctx: { auth?: { user?: { id?: string } } }) {
   const userId = ctx.auth?.user?.id;
   if (!userId) throw new HomeFixError("AUTH_REQUIRED", "Sign in to use HomeFix household data.", false, "authenticate");
@@ -473,6 +487,36 @@ export function registerHomeFixTools(
     return { content: [{ type: "text", text: "The user-reported booking outcome was saved." }], structuredContent: result };
   }));
 
+  const exportHouseholdData = server.tool({
+    ...protectedTool,
+    name: "export_household_data",
+    title: "Export my HomeFix data",
+    description: "Export the authenticated user's HomeFix household records. This includes only that user's household data and never credentials or service-role secrets.",
+    inputSchema: z.object({ confirmation: z.literal("EXPORT_MY_HOMEFIX_DATA") }).strict(),
+    outputSchema: householdExportSchema,
+  }, withErrors(async (_, ctx) => {
+    const repo = repositoryOrThrow(repository);
+    const scope = await repo.resolveHousehold(userIdFromContext(ctx));
+    if (!scope) return { content: [{ type: "text", text: "No HomeFix household data exists to export." }], structuredContent: { household: null, householdMembers: [], homeProfiles: [], intakeGroups: [], maintenanceRequests: [], serviceSearches: [], serviceOptions: [], bookingHandoffs: [], maintenanceEvents: [], source: "supabase" as const } };
+    const data = await repo.exportHouseholdData(scope);
+    return { content: [{ type: "text", text: "Your HomeFix household data export is ready." }], structuredContent: data };
+  }));
+
+  const deleteHouseholdData = server.tool({
+    ...protectedTool,
+    name: "delete_household_data",
+    title: "Delete my HomeFix data",
+    description: "Permanently delete the authenticated user's HomeFix household and cascading repair data. Requires an explicit confirmation token and cannot be undone.",
+    inputSchema: z.object({ confirmation: z.literal("DELETE_MY_HOMEFIX_DATA") }).strict(),
+    outputSchema: z.object({ deleted: z.boolean(), householdId: z.string().nullable(), source: sourceSchema }),
+  }, withErrors(async (_, ctx) => {
+    const repo = repositoryOrThrow(repository);
+    const scope = await repo.resolveHousehold(userIdFromContext(ctx));
+    if (!scope) return { content: [{ type: "text", text: "No HomeFix household data exists to delete." }], structuredContent: { deleted: false, householdId: null, source: "supabase" as const } };
+    const result = await repo.deleteHousehold(scope);
+    return { content: [{ type: "text", text: "Your HomeFix household data was deleted." }], structuredContent: result };
+  }));
+
   return {
     createHousehold,
     saveHomeProfile,
@@ -491,5 +535,7 @@ export function registerHomeFixTools(
     recordHandoffOpened,
     getActivity,
     recordBookingOutcome,
+    exportHouseholdData,
+    deleteHouseholdData,
   };
 }

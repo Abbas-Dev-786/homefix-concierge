@@ -2,6 +2,7 @@ import { HomeFixError } from "../domain/errors.js";
 import { assertMaintenanceTransition, type MaintenanceStatus } from "../domain/maintenance-state.js";
 import { SupabaseRestClient } from "../integrations/supabase-rest.js";
 import type { TaskrabbitLocation } from "../integrations/composio-taskrabbit.js";
+import { sanitizePersistedData } from "../security/sanitization.js";
 
 export type HomeProfileInput = {
   propertyType?: string;
@@ -500,6 +501,38 @@ export class HomeFixRepository {
     return this.db.select<Row>("maintenance_events", query);
   }
 
+  async exportHouseholdData(scope: HouseholdScope) {
+    const [households, members, profiles, groups, requests, searches, options, handoffs, events] = await Promise.all([
+      this.db.select<Row>("households", { id: `eq.${scope.householdId}`, limit: "1" }),
+      this.db.select<Row>("household_members", { household_id: `eq.${scope.householdId}` }),
+      this.db.select<Row>("home_profiles", { household_id: `eq.${scope.householdId}` }),
+      this.db.select<Row>("intake_groups", { household_id: `eq.${scope.householdId}` }),
+      this.db.select<Row>("maintenance_requests", { household_id: `eq.${scope.householdId}` }),
+      this.db.select<Row>("service_searches", { household_id: `eq.${scope.householdId}` }),
+      this.db.select<Row>("service_options", { household_id: `eq.${scope.householdId}` }),
+      this.db.select<Row>("booking_handoffs", { household_id: `eq.${scope.householdId}` }),
+      this.db.select<Row>("maintenance_events", { household_id: `eq.${scope.householdId}`, order: "created_at.asc" }),
+    ]);
+    return {
+      household: first(households) ?? null,
+      householdMembers: members,
+      homeProfiles: profiles,
+      intakeGroups: groups,
+      maintenanceRequests: requests,
+      serviceSearches: searches,
+      serviceOptions: options,
+      bookingHandoffs: handoffs,
+      maintenanceEvents: events.map((event) => ({ ...event, payload_sanitized: sanitizePersistedData(event.payload_sanitized) })),
+      source: "supabase" as const,
+    };
+  }
+
+  async deleteHousehold(scope: HouseholdScope) {
+    const rows = await this.db.delete<Row>("households", { id: `eq.${scope.householdId}` });
+    if (!first(rows)) throw new HomeFixError("NOT_FOUND", "That household was not found or has already been deleted.", false, "refresh_dashboard");
+    return { deleted: true as const, householdId: scope.householdId, source: "supabase" as const };
+  }
+
   async getHandoff(scope: HouseholdScope, handoffId: string) {
     const rows = await this.db.select<Row>("booking_handoffs", {
       id: `eq.${handoffId}`,
@@ -593,7 +626,7 @@ export class HomeFixRepository {
       event_type: eventType,
       actor_type: actorType,
       source_mode: sourceMode,
-      payload_sanitized: payload,
+      payload_sanitized: sanitizePersistedData(payload),
     });
   }
 }

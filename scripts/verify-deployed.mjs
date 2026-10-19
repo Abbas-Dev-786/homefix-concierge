@@ -1,4 +1,4 @@
-import { Client, LATEST_PROTOCOL_VERSION, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import fs from "node:fs";
 import process from "node:process";
 
@@ -36,11 +36,16 @@ function rootUrlFor(endpoint) {
   return root;
 }
 
+const REQUIRED_PROTOCOL_VERSION = "2025-11-25";
+
 loadLocalEnv();
 
 const endpoint = requireHttpsUrl(process.env.MCP_URL ?? "", "MCP_URL");
 const root = rootUrlFor(endpoint);
-const client = new Client({ name: "homefix-phase-6-deployed-check", version: "0.1.0" });
+const client = new Client(
+  { name: "homefix-phase-7-deployed-check", version: "0.1.0" },
+  { protocolVersion: REQUIRED_PROTOCOL_VERSION }
+);
 const transport = new StreamableHTTPClientTransport(endpoint);
 
 try {
@@ -59,8 +64,8 @@ try {
   if (!unauthenticatedDashboard.isError) {
     throw new Error("Deployed open_homefix_dashboard was callable without authentication");
   }
-  if (!transport.protocolVersion || transport.protocolVersion < LATEST_PROTOCOL_VERSION) {
-    throw new Error(`Deployed protocol ${transport.protocolVersion ?? "unknown"}; required ${LATEST_PROTOCOL_VERSION} or later`);
+  if (transport.protocolVersion !== REQUIRED_PROTOCOL_VERSION) {
+    throw new Error(`Deployed protocol ${transport.protocolVersion ?? "unknown"}; required exactly ${REQUIRED_PROTOCOL_VERSION}`);
   }
 
   const identityTool = tools.tools.find((tool) => tool.name === "verify-identity");
@@ -111,7 +116,8 @@ try {
     endpoint: `${endpoint.origin}${endpoint.pathname}`,
     transport: "streamable-http",
     negotiatedProtocolVersion: transport.protocolVersion,
-    requiredProtocolVersion: LATEST_PROTOCOL_VERSION,
+    requiredProtocolVersion: REQUIRED_PROTOCOL_VERSION,
+    initializedNotificationSent: true,
     toolCount: tools.tools.length,
     viewResource,
     readiness: { status: readiness.status, body: await readiness.json() },

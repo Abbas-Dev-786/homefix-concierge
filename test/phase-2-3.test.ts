@@ -47,6 +47,7 @@ class FakeDb {
     booking_handoffs: [],
     maintenance_events: [],
     intake_groups: [],
+    service_searches: [],
     service_options: [],
   };
   forceConflict = false;
@@ -98,6 +99,12 @@ class FakeDb {
   async update<T>(table: string, query: Record<string, string>, patch: Row): Promise<T[]> {
     const matches = await this.select<Row>(table, query);
     for (const match of matches) Object.assign(match, patch);
+    return matches as T[];
+  }
+
+  async delete<T>(table: string, query: Record<string, string>): Promise<T[]> {
+    const matches = await this.select<Row>(table, query);
+    this.rows[table] = (this.rows[table] ?? []).filter((row) => !matches.includes(row));
     return matches as T[];
   }
 
@@ -198,4 +205,19 @@ test("user reported booking outcome is recorded once and remains truthful", asyn
   assert.equal(firstOutcome.handoffStatus, "user_reported_booked");
   assert.equal(repeatedOutcome.maintenanceStatus, "booked_user_reported");
   assert.equal(db.rows.booking_handoffs[0].status, "user_reported_booked");
+});
+
+test("household export and deletion stay within the verified household scope", async () => {
+  const db = new FakeDb();
+  db.rows.home_profiles.push({ household_id: "household-a", home_summary: "Safe summary" });
+  db.rows.maintenance_events.push({ household_id: "household-a", payload_sanitized: { authorization: "Bearer hidden" } });
+  const repo = repository(db);
+  const exported = await repo.exportHouseholdData(scopeA);
+  assert.equal(exported.household?.id, "household-a");
+  assert.equal(exported.homeProfiles.length, 1);
+  assert.deepEqual(exported.maintenanceEvents[0]?.payload_sanitized, { authorization: "[REDACTED]" });
+  const deleted = await repo.deleteHousehold(scopeA);
+  assert.equal(deleted.deleted, true);
+  assert.equal(db.rows.households.some((row) => row.id === "household-a"), false);
+  assert.equal(db.rows.households.some((row) => row.id === "household-b"), true);
 });

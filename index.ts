@@ -14,6 +14,7 @@ import { ComposioTaskrabbitAdapter } from "./src/integrations/composio-taskrabbi
 import { consentPageError, renderConsentPage } from "./src/oauth/consent-page.js";
 import { HomeFixRepository } from "./src/repositories/homefix-repository.js";
 import { registerHomeFixTools } from "./src/tools/homefix-tools.js";
+import { clientAddress, MAX_REQUEST_BYTES, SlidingWindowRateLimiter } from "./src/security/request-limits.js";
 
 const serverConfig = {
   name: "homefix-concierge",
@@ -49,10 +50,23 @@ const server = oauthConfigured
     })
   : new MCPServer({ ...serverConfig });
 
+const requestLimiter = new SlidingWindowRateLimiter(env.RATE_LIMIT_PER_MINUTE);
+server.use(async (c, next) => {
+  if (c.req.path !== env.MCP_ENDPOINT_PATH) return next();
+  const contentLength = Number(c.req.header("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > Math.min(env.MAX_REQUEST_BYTES, MAX_REQUEST_BYTES)) {
+    return c.json({ error: "Request body is too large." }, 413);
+  }
+  if (!requestLimiter.allow(`mcp:${clientAddress(c.req.raw.headers)}`)) {
+    return c.json({ error: "Too many requests. Please retry shortly." }, 429, { "Retry-After": "60" });
+  }
+  await next();
+});
+
 const typedServer = server as MCPServer<SupabaseOAuthUser>;
 
 const homefixRepository = persistenceConfigured
-  ? new HomeFixRepository(new SupabaseRestClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!))
+  ? new HomeFixRepository(new SupabaseRestClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, env.OUTBOUND_TIMEOUT_MS))
   : undefined;
 
 const taskrabbitAdapter = composioConfigured
@@ -112,6 +126,8 @@ export const evaluateRepairGroupBudget = registeredHomeFixTools?.evaluateRepairG
 export const recordHandoffOpened = registeredHomeFixTools?.recordHandoffOpened as HomeFixToolRefs["recordHandoffOpened"];
 export const getActivity = registeredHomeFixTools?.getActivity as HomeFixToolRefs["getActivity"];
 export const recordBookingOutcome = registeredHomeFixTools?.recordBookingOutcome as HomeFixToolRefs["recordBookingOutcome"];
+export const exportHouseholdData = registeredHomeFixTools?.exportHouseholdData as HomeFixToolRefs["exportHouseholdData"];
+export const deleteHouseholdData = registeredHomeFixTools?.deleteHouseholdData as HomeFixToolRefs["deleteHouseholdData"];
 
 server.get("/health", (c) =>
   c.json({ status: "ok", service: "homefix-concierge" })

@@ -5,11 +5,11 @@ import process from "node:process";
 import fs from "node:fs";
 import {
   Client,
-  LATEST_PROTOCOL_VERSION,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 
 const projectRoot = new URL("..", import.meta.url);
+const REQUIRED_PROTOCOL_VERSION = "2025-11-25";
 
 function loadLocalEnv() {
   const envPath = fileURLToPath(new URL("../.env", import.meta.url));
@@ -75,17 +75,32 @@ let childOutput = "";
 child.stdout.on("data", (chunk) => { childOutput += chunk.toString(); });
 child.stderr.on("data", (chunk) => { childOutput += chunk.toString(); });
 
-const client = new Client({ name: "homefix-phase-6-protocol-check", version: "0.1.0" });
+const client = new Client(
+  { name: "homefix-phase-7-protocol-check", version: "0.1.0" },
+  { protocolVersion: REQUIRED_PROTOCOL_VERSION }
+);
 const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`));
 
 try {
   await waitForHealth(baseUrl, child);
+  const oversizedBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { padding: "x".repeat(256 * 1024 + 1) } });
+  const oversizedRequest = await fetch(`${baseUrl}/mcp`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "content-length": String(Buffer.byteLength(oversizedBody)),
+    },
+    body: oversizedBody,
+  });
+  if (oversizedRequest.status !== 413) {
+    throw new Error(`Oversized MCP request returned HTTP ${oversizedRequest.status}; expected 413`);
+  }
   await client.connect(transport);
   const tools = await client.listTools();
   const negotiated = transport.protocolVersion;
   const dashboardTool = tools.tools.find((tool) => tool.name === "open_homefix_dashboard");
-  if (!negotiated || negotiated < LATEST_PROTOCOL_VERSION) {
-    throw new Error(`Negotiated protocol ${negotiated ?? "unknown"}; required ${LATEST_PROTOCOL_VERSION} or later`);
+  if (negotiated !== REQUIRED_PROTOCOL_VERSION) {
+    throw new Error(`Negotiated protocol ${negotiated ?? "unknown"}; required exactly ${REQUIRED_PROTOCOL_VERSION}`);
   }
   if (!dashboardTool) {
     throw new Error("open_homefix_dashboard was not returned by tools/list");
@@ -103,10 +118,13 @@ try {
       arguments: {},
     });
   } catch {
-    unauthenticatedDashboard = { isError: true };
+    unauthenticatedDashboard = { isError: true, transportRejected: true };
   }
   if (!unauthenticatedDashboard.isError) {
     throw new Error("open_homefix_dashboard was callable without authentication");
+  }
+  if (!unauthenticatedDashboard.transportRejected && (!Array.isArray(unauthenticatedDashboard.content) || !unauthenticatedDashboard.structuredContent?.code)) {
+    throw new Error("Unauthenticated dashboard rejection did not use a valid MCP error envelope");
   }
 
   const identityTool = tools.tools.find((tool) => tool.name === "verify-identity");
@@ -135,7 +153,7 @@ try {
       });
       const authenticatedTransport = new StreamableHTTPClientTransport(
         new URL(`${baseUrl}/mcp`),
-        { authProvider: { token: async () => accessToken } }
+        { authProvider: { token: async () => accessToken }, protocolVersion: REQUIRED_PROTOCOL_VERSION }
       );
       try {
         await authenticatedClient.connect(authenticatedTransport);
@@ -180,7 +198,9 @@ try {
     status: "passed",
     transport: "streamable-http",
     negotiatedProtocolVersion: negotiated,
-    requiredProtocolVersion: LATEST_PROTOCOL_VERSION,
+    requiredProtocolVersion: REQUIRED_PROTOCOL_VERSION,
+    initializedNotificationSent: true,
+    oversizedRequest: "rejected-413",
     toolCount: tools.tools.length,
     viewResource: dashboardTool._meta?.ui?.resourceUri ?? dashboardTool._meta?.["ui/resourceUri"],
     readiness: { status: readiness.status, body: readinessBody },

@@ -7,7 +7,8 @@ export class SupabaseRestClient {
 
   constructor(
     private readonly supabaseUrl: string,
-    private readonly serviceRoleKey: string
+    private readonly serviceRoleKey: string,
+    private readonly timeoutMs = 12000
   ) {
     this.baseUrl = `${supabaseUrl.replace(/\/$/, "")}/rest/v1`;
   }
@@ -33,7 +34,7 @@ export class SupabaseRestClient {
           ...(options.prefer ? { Prefer: options.prefer } : {}),
         },
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch {
       throw new HomeFixError(
@@ -95,6 +96,14 @@ export class SupabaseRestClient {
       method: "PATCH",
       query,
       body: row,
+      prefer: "return=representation",
+    });
+  }
+
+  delete<T>(table: string, query: Record<string, string>) {
+    return this.request<T[]>(table, {
+      method: "DELETE",
+      query,
       prefer: "return=representation",
     });
   }

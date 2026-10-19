@@ -28,11 +28,14 @@ npm run verify:protocol
 npm run test:unit
 npm run verify:deployed
 npm run verify:phase2-3
+npm run verify:security
 ```
 
 `npm run dev` serves the MCP endpoint at `http://localhost:3000/mcp` and the local Inspector at `http://localhost:3000/mcp/inspector`. The protocol command starts the production build, connects with the official MCP Streamable HTTP client, verifies the negotiated protocol version, lists tools, and checks the authenticated dashboard View binding and unauthenticated rejection.
 
 The active product entrypoint is `open_homefix_dashboard`, bound to `views/homefix-dashboard/`. The View supports explicit household onboarding, profile persistence, repair intake, real live Taskrabbit searches, comparison, validated handoffs, host-mediated external opening, user-reported outcomes, history, and activity. It uses only authenticated household data and live Composio Taskrabbit responses; no provider fixtures are bundled.
+
+The server also enforces a bounded MCP request body (256 KB by default), a per-process per-address request window, finite Supabase/Composio timeouts, and redaction/bounding for persisted activity payloads. Configure `RATE_LIMIT_PER_MINUTE`, `MAX_REQUEST_BYTES`, and `OUTBOUND_TIMEOUT_MS` in the server environment. The authenticated `export_household_data` and `delete_household_data` tools provide explicit data portability and cascading deletion; deletion requires the exact confirmation token described by the tool schema.
 
 Phase 2 and Phase 3 add authenticated household/profile persistence and typed HomeFix domain tools. Apply the checked-in migrations to the intended Supabase project before using those tools with real data:
 
@@ -45,6 +48,8 @@ The migrations are not applied automatically. The deployment must have `SUPABASE
 For a real Phase 2/3 exit check, create two dedicated Supabase test users, obtain temporary access tokens for both, set `PHASE23_TEST_ACCESS_TOKEN_A` and `PHASE23_TEST_ACCESS_TOKEN_B` only in the local shell, and run `npm run verify:phase2-3` against the deployed `MCP_URL`. The verifier creates one isolated test household and repair record for user A and confirms user B cannot read or mutate it. Remove both token variables after the check.
 
 Phase 4/5 requires the server-only Composio project API key (`COMPOSIO_API_KEY`, normally `ak_...`) and a Taskrabbit connection in Composio. The key must have **Session management: write** and **Session tool execution** permissions; read-only session management keys return HTTP 403 when a per-user session is created. A `ck_...` consumer key belongs to Composio Connect and cannot authenticate this server integration. `TASKRABBIT_TOOL_MAP_JSON` is optional when live tool descriptions identify exactly one tool per capability; otherwise set it to the exact discovered names for `listServices`, `checkAvailability`, and `createDeepLink`. The adapter uses Composio's official TypeScript session SDK and `session.execute(...)` path for provider calls because the hosted Taskrabbit MCP transport currently returns an upstream runtime error; it also preserves the live provider location object required for deep-link generation. It creates a per-user session from the verified Supabase user ID and never opens a booking link or claims a booking.
+
+Phase 7 local hardening is checked by `npm run verify:protocol`, `npm run test:unit`, and `npm run verify:security`. The protocol verifier pins the initialize request to MCP `2025-11-25`, checks the View binding and unauthenticated rejection, and reports when an authenticated token was not supplied. A public endpoint check requires a current deployed build; rerun it after deployment because local source changes are not automatically published.
 
 When a temporary Supabase access token is available, the protocol check can also verify the protected identity tool. Set it only in the current shell and never commit it:
 
