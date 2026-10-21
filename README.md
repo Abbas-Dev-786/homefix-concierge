@@ -1,77 +1,248 @@
 # HomeFix Concierge
 
-HomeFix Concierge is one Manufact MCP App deployment: a TypeScript `mcp-use` server with a React HomeFix dashboard View, Supabase-backed household state, and live Taskrabbit capabilities through Composio. Phases 1–6 are implemented locally; deployed host verification remains an environment-specific step.
+> A voice-friendly, screen-supported home-maintenance concierge that turns a repair request into a persistent, live, user-approved Taskrabbit handoff.
 
-## Local setup
+HomeFix Concierge is a self-hosted MCP App built for the **Amazon Alexa+ hackathon track**. A connected MCP host can use HomeFix to remember a user's household context, capture repair requests, search live Taskrabbit capabilities through Composio, compare returned options, prepare a validated booking handoff, and preserve the outcome for follow-up.
 
-Requirements:
+HomeFix is deliberately designed as one MCP server with one MCP App View. It does not use fabricated provider results, a standalone web simulator, a duplicate chat agent, or an automatic booking claim. The user must explicitly continue to Taskrabbit, and HomeFix only records a booking when the user reports the outcome.
 
-- Node.js `>=22.22.2`
+## Live project
+
+- Public MCP endpoint: <https://dark-spark-yobvc.run.mcp-use.com/mcp>
+- Local Inspector: <http://localhost:3000/mcp/inspector>
+- MCP protocol: `2025-11-25`
+- Deployment: Manufact Cloud
+- Primary track: Alexa+
+- License: MIT
+
+The public endpoint currently passes the deployed protocol/readiness checks, exposes the HomeFix tools and View binding, serves the OAuth consent route, and rejects unauthenticated household access. A fresh authenticated walkthrough is still required before claiming the complete live Taskrabbit journey as verified.
+
+## Why this belongs in Alexa+
+
+Home repair is a natural voice-first task: people often describe a problem while moving around their home and do not want to repeat household details every time they need help. HomeFix combines conversational MCP tool use with a screen-supported View so the host can handle natural-language intake while the user can review locations, prices, status, provenance, and explicit external actions.
+
+For the Alexa+ track, the required technology is used at runtime rather than only being named in this README:
+
+1. `index.ts` imports and instantiates `MCPServer` from `mcp-use`.
+2. The same runtime registers the HomeFix MCP tools and serves the `/mcp` Streamable HTTP endpoint.
+3. `index.ts` imports and calls `oauthSupabaseProvider` for verified Supabase OAuth identity.
+4. `views/homefix-dashboard/view.tsx` imports `mcp-use/react` hooks and calls the deployed HomeFix tools through the MCP App bridge.
+5. `src/integrations/composio-taskrabbit.ts` imports `Composio`, creates per-user sessions, discovers the live tool schemas, and calls `session.execute(...)` for Taskrabbit capabilities.
+6. `src/integrations/supabase-rest.ts` calls the Supabase REST API for durable household and repair state.
+
+The connected Alexa+/MCP host supplies the conversational or voice experience; HomeFix supplies the authenticated MCP tools, durable state, live provider integration, and interactive View.
+
+## Product flow
+
+1. The user connects to HomeFix through an MCP host.
+2. Supabase OAuth verifies the caller and HomeFix resolves the caller's private household.
+3. The user explicitly creates one household and saves non-sensitive home context.
+4. The user describes one or more repair needs.
+5. HomeFix stores the repair request and uses Composio's live Taskrabbit MCP capabilities for supported services and availability/pricing.
+6. HomeFix normalizes only returned provider data, shows its source and retrieval time, and compares options against the user's constraints.
+7. The user selects an option. HomeFix validates the result freshness and creates a trusted Taskrabbit deep link.
+8. The user explicitly clicks **Continue to Taskrabbit**. HomeFix records the handoff as opened, not booked.
+9. The user can return later and report booked, cancelled, completed, or unresolved. The same maintenance record is updated.
+
+Provider results expire after 15 minutes. At exactly 15 minutes, HomeFix requires a fresh lookup before preparing a handoff.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Host["Alexa+ compatible MCP host<br/>voice or text interaction"]
+    Manufact["Manufact Cloud<br/>HomeFix MCP App"]
+    Server["TypeScript mcp-use server<br/>Streamable HTTP /mcp"]
+    View["React HomeFix dashboard<br/>MCP App View"]
+    Auth["Supabase Auth<br/>OAuth 2.1 + DCR"]
+    DB["Supabase Postgres<br/>RLS + durable state"]
+    Composio["Composio Tool Router<br/>per-user session"]
+    Taskrabbit["Taskrabbit MCP capabilities<br/>services, availability, deep links"]
+
+    Host <-->|MCP 2025-11-25| Manufact
+    Manufact --> Server
+    Server --> View
+    Server --> Auth
+    Server --> DB
+    Server --> Composio
+    Composio --> Taskrabbit
+    View <-->|MCP App bridge| Server
+```
+
+### Runtime workflow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Host as Alexa+/MCP host
+    participant View as HomeFix View
+    participant Server as HomeFix MCP server
+    participant Supabase
+    participant Composio
+    participant Taskrabbit
+
+    User->>Host: Describe a repair
+    Host->>Server: Call authenticated HomeFix tool
+    Server->>Supabase: Resolve household and persist request
+    Server-->>View: Typed dashboard state
+    View->>Server: Request live service options
+    Server->>Composio: Create/reuse verified-user session
+    Composio->>Taskrabbit: Execute discovered capability
+    Taskrabbit-->>Composio: Live services/options/link data
+    Composio-->>Server: Provider response
+    Server->>Supabase: Persist search and sanitized activity
+    Server-->>View: Options with source and timestamps
+    User->>View: Select option and click Continue to Taskrabbit
+    View->>Server: Record explicit handoff opened
+    Server->>Supabase: Persist opened/pending-outcome state
+```
+
+## Technology stack
+
+| Technology | Use in HomeFix |
+| --- | --- |
+| `mcp-use` | MCP server, typed tools, OAuth provider integration, MCP App View binding, Inspector, build, and deployment |
+| Model Context Protocol | Host-to-server communication over Streamable HTTP using MCP `2025-11-25` |
+| React / React DOM | Interactive HomeFix dashboard View |
+| `mcp-use/react` | Tool calls, lifecycle states, model context, and host-mediated external links |
+| Supabase Auth | OAuth 2.1, dynamic client registration, consent, and verified identity |
+| Supabase Postgres / REST | Household, profile, repair, provider-result, handoff, outcome, and activity persistence |
+| `@composio/core` | Per-user Tool Router sessions, schema discovery, and provider execution |
+| Taskrabbit through Composio MCP | Live supported-service discovery, availability/pricing lookup, and booking deep-link generation |
+| Zod | Narrow input/output schemas and validation for MCP tools |
+| `@modelcontextprotocol/client` | Protocol, tool-list, authentication, and deployed endpoint verification |
+| TypeScript / Node.js / npm | Application implementation, builds, tests, and scripts |
+| Manufact Cloud | Public MCP server and compiled View deployment |
+
+## Repository structure
+
+```text
+.
+├── index.ts                         # MCP server entrypoint, OAuth, middleware, routes
+├── views/
+│   └── homefix-dashboard/
+│       ├── view.tsx                  # React MCP App View and bridge actions
+│       └── view.css                  # View styling
+├── src/
+│   ├── config/env.ts                 # Environment validation and readiness flags
+│   ├── domain/                       # Errors and maintenance state machine
+│   ├── integrations/
+│   │   ├── composio-taskrabbit.ts    # Live Composio/Taskrabbit adapter
+│   │   └── supabase-rest.ts          # Server-side Supabase REST client
+│   ├── oauth/consent-page.ts         # Same-deployment OAuth consent page
+│   ├── repositories/                 # Household-scoped persistence methods
+│   ├── security/                     # Request limits, rate limits, sanitization
+│   └── tools/homefix-tools.ts        # HomeFix MCP tool contracts and handlers
+├── supabase/migrations/              # Ordered Postgres schema and RLS migrations
+├── test/                             # Phase-specific TypeScript test fixtures/checks
+├── scripts/                          # Unit, protocol, security, OAuth, and deployment checks
+├── docs/                             # PRD, technical specification, coding requirements
+├── plan/                             # Phase plans and implementation evidence
+├── public/                           # Public View assets and icons
+├── .env.example                      # Safe environment variable template
+├── LICENSE                            # MIT license
+└── package.json                       # Scripts and dependencies
+```
+
+## Setup
+
+### Requirements
+
+- Node.js `>=22.22.3`
 - npm
+- A Supabase project with Auth and Postgres
+- A Composio project API key with Session Management write and Session Tool Execution permissions
+- A Taskrabbit connection available through Composio
+- Supabase CLI for applying migrations
 
-Install dependencies and copy the environment template:
+### Install
 
 ```bash
 npm install
-copy .env.example .env
+cp .env.example .env
 ```
 
-The local server can start without credentials, but the authenticated HomeFix dashboard requires Supabase OAuth, persistence, and Composio server-only variables. Never put service-role keys or access tokens in View code.
+On Windows PowerShell:
 
-## Commands
-
-```bash
-npm run dev
-npm run typecheck
-npm run build
-npm run verify:protocol
-npm run test:unit
-npm run verify:deployed
-npm run verify:phase2-3
-npm run verify:security
+```powershell
+npm install
+Copy-Item .env.example .env
 ```
 
-`npm run dev` serves the MCP endpoint at `http://localhost:3000/mcp` and the local Inspector at `http://localhost:3000/mcp/inspector`. The protocol command starts the production build, connects with the official MCP Streamable HTTP client, verifies the negotiated protocol version, lists tools, and checks the authenticated dashboard View binding and unauthenticated rejection.
+### Configure environment
 
-The active product entrypoint is `open_homefix_dashboard`, bound to `views/homefix-dashboard/`. The View supports explicit household onboarding, profile persistence, repair intake, real live Taskrabbit searches, comparison, validated handoffs, host-mediated external opening, user-reported outcomes, history, and activity. It uses only authenticated household data and live Composio Taskrabbit responses; no provider fixtures are bundled.
+Set the server-only values in `.env` or in the deployment environment. Never put service keys, Composio keys, or OAuth tokens in View code.
 
-The server also enforces a bounded MCP request body (256 KB by default), a per-process per-address request window, finite Supabase/Composio timeouts, and redaction/bounding for persisted activity payloads. Configure `RATE_LIMIT_PER_MINUTE`, `MAX_REQUEST_BYTES`, and `OUTBOUND_TIMEOUT_MS` in the server environment. The authenticated `export_household_data` and `delete_household_data` tools provide explicit data portability and cascading deletion; deletion requires the exact confirmation token described by the tool schema.
+```text
+MCP_URL=https://your-public-host/mcp
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+COMPOSIO_API_KEY=ak_...
+COMPOSIO_API_BASE_URL=https://backend.composio.dev
+TASKRABBIT_TOOL_MAP_JSON=
+RATE_LIMIT_PER_MINUTE=30
+MAX_REQUEST_BYTES=256000
+OUTBOUND_TIMEOUT_MS=12000
+```
 
-Phase 2 and Phase 3 add authenticated household/profile persistence and typed HomeFix domain tools. Apply the checked-in migrations to the intended Supabase project before using those tools with real data:
+`MCP_USE_OAUTH_SUPABASE_PROJECT_ID` and `MCP_USE_OAUTH_SUPABASE_JWT_SECRET` are optional explicit OAuth provider overrides. See [.env.example](.env.example) for the complete variable list.
+
+### Apply database migrations
+
+Apply the migrations in order to the intended Supabase project. They are not applied automatically:
 
 ```bash
 supabase db push
 ```
 
-The migrations are not applied automatically. The deployment must have `SUPABASE_URL` and the server-only `SUPABASE_SERVICE_ROLE_KEY`; the service key is never sent to Views or MCP tool output.
+The migrations create household ownership, home profiles, repair requests, service searches, service options, booking handoffs, maintenance events, indexes, constraints, and RLS policies.
 
-For a real Phase 2/3 exit check, create two dedicated Supabase test users, obtain temporary access tokens for both, set `PHASE23_TEST_ACCESS_TOKEN_A` and `PHASE23_TEST_ACCESS_TOKEN_B` only in the local shell, and run `npm run verify:phase2-3` against the deployed `MCP_URL`. The verifier creates one isolated test household and repair record for user A and confirms user B cannot read or mutate it. Remove both token variables after the check.
-
-Phase 4/5 requires the server-only Composio project API key (`COMPOSIO_API_KEY`, normally `ak_...`) and a Taskrabbit connection in Composio. The key must have **Session management: write** and **Session tool execution** permissions; read-only session management keys return HTTP 403 when a per-user session is created. A `ck_...` consumer key belongs to Composio Connect and cannot authenticate this server integration. `TASKRABBIT_TOOL_MAP_JSON` is optional when live tool descriptions identify exactly one tool per capability; otherwise set it to the exact discovered names for `listServices`, `checkAvailability`, and `createDeepLink`. The adapter uses Composio's official TypeScript session SDK and `session.execute(...)` path for provider calls because the hosted Taskrabbit MCP transport currently returns an upstream runtime error; it also preserves the live provider location object required for deep-link generation. It creates a per-user session from the verified Supabase user ID and never opens a booking link or claims a booking.
-
-Phase 7 local hardening is checked by `npm run verify:protocol`, `npm run test:unit`, and `npm run verify:security`. The protocol verifier pins the initialize request to MCP `2025-11-25`, checks the View binding and unauthenticated rejection, and reports when an authenticated token was not supplied. A public endpoint check requires a current deployed build; rerun it after deployment because local source changes are not automatically published.
-
-When a temporary Supabase access token is available, the protocol check can also verify the protected identity tool. Set it only in the current shell and never commit it:
-
-```powershell
-$env:PHASE1_TEST_ACCESS_TOKEN = "<temporary access token>"
-npm run verify:protocol
-Remove-Item Env:PHASE1_TEST_ACCESS_TOKEN
-```
-
-To obtain a correctly scoped token through the live Supabase OAuth 2.1 flow, load `MCP_URL` from `.env` and run `npm run oauth:token`. The script uses PKCE, opens the live authorization page, waits for a localhost callback, and writes the token to the ignored `.oauth-token.env` file. Load it into PowerShell using the command printed by the script; do not paste the token into chat or commit the file.
-
-## Environment variables
-
-See [.env.example](.env.example) for names and safe placeholders. The Phase 1 OAuth provider reads `SUPABASE_URL`; the consent page also needs `SUPABASE_ANON_KEY`. Supabase OAuth 2.1, dynamic client registration, asymmetric JWT signing, Site URL, and the `/oauth/consent` authorization path must be configured in the Supabase project before a live OAuth check can pass. Phase 4/5 also uses `COMPOSIO_API_KEY`, optional `COMPOSIO_API_BASE_URL`, and optional `TASKRABBIT_TOOL_MAP_JSON` on the server only.
-
-## Deployment
-
-The same server and View are deployed together through Manufact Cloud:
+### Run locally
 
 ```bash
-npm run deploy
+npm run dev
 ```
 
-For the deployed environment, set `MCP_URL` to the public HTTPS `/mcp` URL and run `npm run verify:deployed`. Local Phase 6 evidence is recorded in [`plan/evidence/phase-06-mcp-app-view.md`](plan/evidence/phase-06-mcp-app-view.md); deployed host evidence should be added after the current deployment is updated.
+The local endpoints are:
 
+- MCP endpoint: <http://localhost:3000/mcp>
+- Inspector: <http://localhost:3000/mcp/inspector>
+- Health: <http://localhost:3000/health>
+- Readiness: <http://localhost:3000/ready>
+- OAuth consent: <http://localhost:3000/oauth/consent>
+
+Without external credentials, the server can start for protocol development but remains degraded. Authenticated household workflows require Supabase and Composio configuration.
+
+## Commands and validation
+
+```bash
+npm run typecheck        # TypeScript and generated MCP checks
+npm run test:unit        # Domain, repository, adapter, security, and expiry tests
+npm run build            # Production server and View build
+npm run verify:protocol  # Local MCP handshake, schemas, View binding, auth rejection
+npm run verify:security  # Scan compiled View assets for secrets
+npm run verify:deployed  # Public endpoint protocol/readiness/consent check
+npm run verify:phase2-3  # Two-user deployed persistence and isolation check
+npm run oauth:token      # Obtain a temporary OAuth token through PKCE
+```
+
+## Alexa+ runtime compliance
+
+The repository demonstrates the required track technology in executable code:
+
+| Requirement | Runtime evidence |
+| --- | --- |
+| Self-hosted MCP server | `index.ts` imports `MCPServer`, registers tools, and exports the server |
+| Streamable HTTP | The deployed `/mcp` endpoint negotiates MCP `2025-11-25` |
+| Interactive app surface | `open_homefix_dashboard` binds to `views/homefix-dashboard/` with `outputSchema` and `structuredContent` |
+| Connected host interaction | The View uses `useCallTool`, `useToolContext`, `useOpenExternal`, and `ModelContext` |
+| Authenticated user state | `oauthSupabaseProvider` verifies identity and repository methods resolve household scope |
+| Live external capability | `ComposioTaskrabbitAdapter` creates sessions, discovers schemas, and executes Taskrabbit tools |
+
+This is an Alexa+ MCP implementation rather than a native Alexa device/add-on UI. The hackathon walkthrough is intended to run through the deployed MCP endpoint and a compatible MCP host, with voice input used when supported by that host.
+
+
+## License
+
+HomeFix Concierge is released under the [MIT License](LICENSE).
