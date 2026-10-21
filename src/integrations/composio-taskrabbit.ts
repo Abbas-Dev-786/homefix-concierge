@@ -278,10 +278,10 @@ function mapArguments(tool: DiscoveredTool, capability: IntegrationCapability, i
   if (locationKey && location) {
     args[locationKey] = properties[locationKey]?.type === "object"
       ? Object.fromEntries([
-          [findProperty(properties[locationKey], ["city"]), locationInput.city],
-          [findProperty(properties[locationKey], ["region", "state"]), locationInput.region],
-          [findProperty(properties[locationKey], ["postalCode", "postal_code", "zip", "zipCode"]), locationInput.postalCode],
-        ].filter(([key, value]) => key && value))
+        [findProperty(properties[locationKey], ["city"]), locationInput.city],
+        [findProperty(properties[locationKey], ["region", "state"]), locationInput.region],
+        [findProperty(properties[locationKey], ["postalCode", "postal_code", "zip", "zipCode"]), locationInput.postalCode],
+      ].filter(([key, value]) => key && value))
       : location;
   }
   const cityKey = findProperty(schema, ["city", "town"]);
@@ -403,22 +403,22 @@ function normalizeOptions(payload: unknown, input: AvailabilityInput): Availabil
     const slotsValue = valueAt(object, ["availabilitySlots", "availability_slots", "slots"]);
     const availabilitySlots = Array.isArray(slotsValue)
       ? slotsValue.flatMap((rawSlot) => {
-          const value = asObject(rawSlot);
-          if (!value) return [];
-          const slot = { start: text(valueAt(value, ["start", "startsAt"])), end: text(valueAt(value, ["end", "endsAt"])), label: text(valueAt(value, ["label", "time"])) };
-          return [{ ...(slot.start ? { start: slot.start } : {}), ...(slot.end ? { end: slot.end } : {}), ...(slot.label ? { label: slot.label } : {}) }];
-        })
+        const value = asObject(rawSlot);
+        if (!value) return [];
+        const slot = { start: text(valueAt(value, ["start", "startsAt"])), end: text(valueAt(value, ["end", "endsAt"])), label: text(valueAt(value, ["label", "time"])) };
+        return [{ ...(slot.start ? { start: slot.start } : {}), ...(slot.end ? { end: slot.end } : {}), ...(slot.label ? { label: slot.label } : {}) }];
+      })
       : [];
     const questionsValue = valueAt(object, ["scopingQuestions", "scoping_questions", "questions"]);
     const scopingQuestions = Array.isArray(questionsValue)
       ? questionsValue.flatMap((question) => {
-          const value = asObject(question);
-          if (!value) return [];
-          const questionText = text(valueAt(value, ["question", "text", "label"]));
-          if (!questionText) return [];
-          const id = text(valueAt(value, ["id", "key", "param"])) ?? questionText;
-          return [{ id, param: text(valueAt(value, ["param", "key", "id"])) ?? id, question: questionText, required: valueAt(value, ["required"]) === true || valueAt(value, ["optional"]) === false ? true : undefined }];
-        })
+        const value = asObject(question);
+        if (!value) return [];
+        const questionText = text(valueAt(value, ["question", "text", "label"]));
+        if (!questionText) return [];
+        const id = text(valueAt(value, ["id", "key", "param"])) ?? questionText;
+        return [{ id, param: text(valueAt(value, ["param", "key", "id"])) ?? id, question: questionText, required: valueAt(value, ["required"]) === true || valueAt(value, ["optional"]) === false ? true : undefined }];
+      })
       : [];
     const categoryId = text(valueAt(object, ["categoryId", "category_id", "taskTemplateId", "task_template_id", "templateId", "taskId"]));
     const locationValue = asObject(valueAt(object, ["location"]));
@@ -428,26 +428,26 @@ function normalizeOptions(payload: unknown, input: AvailabilityInput): Availabil
       && typeof valueAt(locationValue, ["lat", "latitude"]) === "number"
       && typeof valueAt(locationValue, ["lng", "longitude"]) === "number"
       ? {
-          address: text(valueAt(locationValue, ["address"])) as string,
-          postal_code: text(valueAt(locationValue, ["postal_code", "postalCode"])) as string,
-          lat: valueAt(locationValue, ["lat", "latitude"]) as number,
-          lng: valueAt(locationValue, ["lng", "longitude"]) as number,
-        }
+        address: text(valueAt(locationValue, ["address"])) as string,
+        postal_code: text(valueAt(locationValue, ["postal_code", "postalCode"])) as string,
+        lat: valueAt(locationValue, ["lat", "latitude"]) as number,
+        lng: valueAt(locationValue, ["lng", "longitude"]) as number,
+      }
       : undefined;
     const questionnaireValue = valueAt(object, ["questionnaire", "scopingAnswers", "scoping_answers"]);
     const providerQuestionnaire = Array.isArray(questionnaireValue)
       ? questionnaireValue.flatMap((rawQuestion) => {
-          const value = asObject(rawQuestion);
-          const question = text(valueAt(value ?? {}, ["question", "text"]));
-          const answer = text(valueAt(value ?? {}, ["answer", "value"]));
-          const param = text(valueAt(value ?? {}, ["param", "key", "id"]));
-          return question && answer && param ? [{ param, question, answer }] : [];
-        })
+        const value = asObject(rawQuestion);
+        const question = text(valueAt(value ?? {}, ["question", "text"]));
+        const answer = text(valueAt(value ?? {}, ["answer", "value"]));
+        const param = text(valueAt(value ?? {}, ["param", "key", "id"]));
+        return question && answer && param ? [{ param, question, answer }] : [];
+      })
       : scopingQuestions.flatMap((question) => {
-          const answers = input.scopingAnswers ?? {};
-          const answer = Object.entries(answers).find(([key]) => key === question.param || key === question.id)?.[1];
-          return answer ? [{ param: question.param ?? question.id, question: question.question, answer }] : [];
-        });
+        const answers = input.scopingAnswers ?? {};
+        const answer = Object.entries(answers).find(([key]) => key === question.param || key === question.id)?.[1];
+        return answer ? [{ param: question.param ?? question.id, question: question.question, answer }] : [];
+      });
     const questionnaire = buildQuestionnaire(scopingQuestions, providerQuestionnaire, input);
     return [{
       title: text(valueAt(object, ["title", "name", "service", "serviceLabel", "taskName"])) ?? "Taskrabbit service option",
