@@ -11,6 +11,7 @@ import {
 } from "./src/config/env.js";
 import { SupabaseRestClient } from "./src/integrations/supabase-rest.js";
 import { ComposioTaskrabbitAdapter } from "./src/integrations/composio-taskrabbit.js";
+import { DEFAULT_TIME_ZONE, getCurrentDateTime as getCurrentDateTimeValue, isValidTimeZone } from "./src/domain/current-date-time.js";
 import { consentPageError, renderConsentPage } from "./src/oauth/consent-page.js";
 import { HomeFixRepository } from "./src/repositories/homefix-repository.js";
 import { registerHomeFixTools } from "./src/tools/homefix-tools.js";
@@ -22,7 +23,7 @@ const serverConfig = {
   version: "1.0",
   description: "HomeFix Concierge for household repair intake, live provider discovery, and user-approved booking handoffs.",
   instructions:
-    "Coordinate HomeFix repair requests using the authenticated household context. Before calling find_service_options, confirm a service category, location, desired date, and desired time window; if any are missing, ask the user first and do not call the provider. Use live Taskrabbit results only when returned by the integration, show timestamps, ask for explicit user selection, and never claim a repair is booked unless the user reports that outcome.",
+    "Coordinate HomeFix repair requests using the authenticated household context. Use get_current_date_time whenever the current date or time is needed; pass an IANA timezone when known, otherwise it returns UTC. Before calling find_service_options, confirm a service category, location, desired date, and desired time window; if any are missing, ask the user first and do not call the provider. Use live Taskrabbit results only when returned by the integration, show timestamps, ask for explicit user selection, and never claim a repair is booked unless the user reports that outcome.",
   websiteUrl: "https://mcp-use.com",
   basePath: env.MCP_ENDPOINT_PATH,
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["512x512"] }],
@@ -64,6 +65,38 @@ server.use(async (c, next) => {
 });
 
 const typedServer = server as MCPServer<SupabaseOAuthUser>;
+
+const currentDateTimeInputSchema = z.object({
+  timeZone: z.string().trim().min(1).max(100)
+    .refine(isValidTimeZone, "timeZone must be a valid IANA timezone, such as America/New_York")
+    .optional()
+    .describe("Optional IANA timezone. Defaults to UTC."),
+}).strict();
+
+const currentDateTimeOutputSchema = z.object({
+  date: z.string(),
+  time: z.string(),
+  dateTime: z.string(),
+  timeZone: z.string(),
+  utcOffset: z.string(),
+  unixMilliseconds: z.number().int(),
+  source: z.literal("system_clock"),
+});
+
+export const getCurrentDateTime = typedServer.tool({
+  name: "get_current_date_time",
+  title: "Get current date and time",
+  description: "Return the current date and time. Call again whenever a fresh update is needed; pass an IANA timezone for local time, or omit it for UTC.",
+  inputSchema: currentDateTimeInputSchema,
+  outputSchema: currentDateTimeOutputSchema,
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+}, async ({ timeZone }) => {
+  const current = getCurrentDateTimeValue(new Date(), timeZone ?? DEFAULT_TIME_ZONE);
+  return {
+    content: [{ type: "text" as const, text: `${current.date} ${current.time} (${current.timeZone}, UTC${current.utcOffset === "Z" ? "" : current.utcOffset})` }],
+    structuredContent: current,
+  };
+});
 
 const homefixRepository = persistenceConfigured
   ? new HomeFixRepository(new SupabaseRestClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, env.OUTBOUND_TIMEOUT_MS))

@@ -6,6 +6,8 @@ HomeFix Concierge is a self-hosted MCP App built for the **Amazon Alexa+ hackath
 
 HomeFix is deliberately designed as one MCP server with one MCP App View. It does not use fabricated provider results, a standalone web simulator, a duplicate chat agent, or an automatic booking claim. The user must explicitly continue to Taskrabbit, and HomeFix only records a booking when the user reports the outcome.
 
+The server also exposes the read-only `get_current_date_time` tool for fresh date/time readings. It accepts an optional IANA timezone and defaults to UTC.
+
 ## Live project
 
 - Public MCP endpoint: <https://dark-spark-yobvc.run.mcp-use.com/mcp>

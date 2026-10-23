@@ -136,6 +136,10 @@ Every tool must have:
 - Consistent structured errors (or SDK-supported tool error results) with an actionable next step.
 - A sanitized tool trace entry containing call ID, tool name, status, duration, data source, and a compact result summary.
 
+#### Tool: `get_current_date_time`
+
+Input: an optional IANA timezone such as `America/New_York` or `Asia/Kolkata`; omit it to use UTC. Behavior: return a fresh system-clock reading on every call with the local date, local time, ISO-style timestamp including UTC offset, resolved timezone, and Unix milliseconds. This read-only tool does not require household persistence or a live provider call; the model should call it again whenever it needs an updated reading.
+
 #### Tool 0: `open_homefix_dashboard`
 
 This is the user-facing entrypoint tool and is bound to `views/homefix-dashboard/view.tsx`. It returns a typed, authenticated dashboard summary for the View, including onboarding state, household profile summary, open maintenance requests, recent handoff/outcome states, and safe Taskrabbit capability status. If the user has no household yet, return `onboardingRequired: true` and empty collections; do not create records without the user's explicit onboarding action or return invented/example data. The View uses the MCP App bridge to invoke other HomeFix tools.

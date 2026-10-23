@@ -4,7 +4,20 @@ import test from "node:test";
 import { sanitizePersistedData } from "../src/security/sanitization.js";
 import { SlidingWindowRateLimiter, clientAddress } from "../src/security/request-limits.js";
 import { clarificationQuestion, missingRequiredServiceSearchInputs } from "../src/domain/service-search-inputs.js";
+import { getCurrentDateTime, isValidTimeZone } from "../src/domain/current-date-time.js";
 import { registerHomeFixTools } from "../src/tools/homefix-tools.js";
+
+test("current date-time tool formats a fresh instant for the requested timezone", () => {
+  const current = getCurrentDateTime(new Date("2026-10-23T12:34:56.000Z"), "Asia/Kolkata");
+  assert.equal(current.date, "2026-10-23");
+  assert.equal(current.time, "18:04:56");
+  assert.equal(current.dateTime, "2026-10-23T18:04:56+05:30");
+  assert.equal(current.timeZone, "Asia/Calcutta");
+  assert.equal(current.utcOffset, "+05:30");
+  assert.equal(current.unixMilliseconds, 1792758896000);
+  assert.equal(isValidTimeZone("America/New_York"), true);
+  assert.equal(isValidTimeZone("not/a-timezone"), false);
+});
 
 test("persisted event data redacts secrets and bounds large values", () => {
   const value = sanitizePersistedData({ authorization: "Bearer super-secret", note: "x".repeat(3000) });
