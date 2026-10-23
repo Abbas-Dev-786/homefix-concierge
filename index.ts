@@ -19,7 +19,7 @@ import { clientAddress, MAX_REQUEST_BYTES, SlidingWindowRateLimiter } from "./sr
 const serverConfig = {
   name: "homefix-concierge",
   title: "HomeFix Concierge",
-  version: "0.1.0-phase-6",
+  version: "0.1.0",
   description: "HomeFix Concierge for household repair intake, live provider discovery, and user-approved booking handoffs.",
   instructions:
     "Coordinate HomeFix repair requests using the authenticated household context. Before calling find_service_options, confirm a service category, location, desired date, and desired time window; if any are missing, ask the user first and do not call the provider. Use live Taskrabbit results only when returned by the integration, show timestamps, ask for explicit user selection, and never claim a repair is booked unless the user reports that outcome.",
@@ -36,18 +36,18 @@ const oauthResource =
 
 const server = oauthConfigured
   ? new MCPServer<SupabaseOAuthUser>({
-      ...serverConfig,
-      oauth: oauthSupabaseProvider({
-        ...(env.SUPABASE_URL ? { supabaseUrl: env.SUPABASE_URL } : {}),
-        ...(env.MCP_USE_OAUTH_SUPABASE_PROJECT_ID
-          ? { projectId: env.MCP_USE_OAUTH_SUPABASE_PROJECT_ID }
-          : {}),
-        ...(oauthResource ? { resource: oauthResource } : {}),
-        resourceName: "HomeFix Concierge",
-        scopesSupported: ["openid", "email", "profile"],
-      }),
-      mixedAuth: true,
-    })
+    ...serverConfig,
+    oauth: oauthSupabaseProvider({
+      ...(env.SUPABASE_URL ? { supabaseUrl: env.SUPABASE_URL } : {}),
+      ...(env.MCP_USE_OAUTH_SUPABASE_PROJECT_ID
+        ? { projectId: env.MCP_USE_OAUTH_SUPABASE_PROJECT_ID }
+        : {}),
+      ...(oauthResource ? { resource: oauthResource } : {}),
+      resourceName: "HomeFix Concierge",
+      scopesSupported: ["openid", "email", "profile"],
+    }),
+    mixedAuth: true,
+  })
   : new MCPServer({ ...serverConfig });
 
 const requestLimiter = new SlidingWindowRateLimiter(env.RATE_LIMIT_PER_MINUTE);
@@ -71,36 +71,36 @@ const homefixRepository = persistenceConfigured
 
 const taskrabbitAdapter = composioConfigured
   ? new ComposioTaskrabbitAdapter({
-      apiKey: env.COMPOSIO_API_KEY,
-      baseUrl: env.COMPOSIO_API_BASE_URL,
-      toolMapJson: env.TASKRABBIT_TOOL_MAP_JSON,
-      timeoutMs: env.OUTBOUND_TIMEOUT_MS,
-    })
+    apiKey: env.COMPOSIO_API_KEY,
+    baseUrl: env.COMPOSIO_API_BASE_URL,
+    toolMapJson: env.TASKRABBIT_TOOL_MAP_JSON,
+    timeoutMs: env.OUTBOUND_TIMEOUT_MS,
+  })
   : undefined;
 
 export const verifyIdentity = oauthConfigured
   ? typedServer.tool(
-      {
-        name: "verify-identity",
-        title: "Verify authenticated identity",
-        description:
-          "Return the verified Supabase user ID from the OAuth request context without accepting a caller-supplied identity.",
-        inputSchema: z.object({}),
-        outputSchema: z.object({ userId: z.string(), source: z.literal("verified-oauth") }),
-        annotations: {
-          readOnlyHint: true,
-          destructiveHint: false,
-          openWorldHint: false,
-        },
+    {
+      name: "verify-identity",
+      title: "Verify authenticated identity",
+      description:
+        "Return the verified Supabase user ID from the OAuth request context without accepting a caller-supplied identity.",
+      inputSchema: z.object({}),
+      outputSchema: z.object({ userId: z.string(), source: z.literal("verified-oauth") }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
       },
-      async (_, ctx) => ({
-        content: [{ type: "text" as const, text: "Authenticated identity verified by Supabase OAuth." }],
-        structuredContent: {
-          userId: ctx.auth.user.id,
-          source: "verified-oauth" as const,
-        },
-      })
-    )
+    },
+    async (_, ctx) => ({
+      content: [{ type: "text" as const, text: "Authenticated identity verified by Supabase OAuth." }],
+      structuredContent: {
+        userId: ctx.auth.user.id,
+        source: "verified-oauth" as const,
+      },
+    })
+  )
   : undefined;
 
 const registeredHomeFixTools = oauthConfigured
