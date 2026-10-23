@@ -358,8 +358,11 @@ export function registerHomeFixTools(
     };
     if (!hasUsableServiceLocation(effectiveInput)) return needsUserInputResponse(["location"]);
     const adapter = taskrabbitOrThrow(taskrabbit);
-    const result = await adapter.listSupportedServices(userId, effectiveInput);
-    return { content: [{ type: "text", text: `${result.services.length} live Taskrabbit service(s) found.` }], structuredContent: result };
+    const result = await adapter.listSupportedServices(userId, effectiveInput, ctx.signal);
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: result,
+    };
   }));
 
   const findServiceOptions = server.tool({
@@ -402,7 +405,7 @@ export function registerHomeFixTools(
     const searchCriteria = { serviceCategory: effectiveInput.serviceCategory, taskTitle: request.title, taskDescription: request.description, city: effectiveInput.city ?? null, region: effectiveInput.region ?? null, postalCode: effectiveInput.postalCode ?? null, desiredDate: effectiveInput.desiredDate ?? null, desiredTimeWindow: effectiveInput.desiredTimeWindow ?? null, scopingAnswers: normalizedScopingAnswers ?? null };
     let result;
     try {
-      result = await adapter.checkAvailability(userId, { ...effectiveInput, serviceCategory: effectiveInput.serviceCategory!, taskTitle: request.title, taskDescription: request.description, scopingAnswers: normalizedScopingAnswers });
+      result = await adapter.checkAvailability(userId, { ...effectiveInput, serviceCategory: effectiveInput.serviceCategory!, taskTitle: request.title, taskDescription: request.description, scopingAnswers: normalizedScopingAnswers }, ctx.signal);
     } catch (error) {
       await repo.createServiceSearch(scope, { requestId: request.id, locationSnapshot, searchCriteria, status: "error", resultCount: 0, errorCode: error instanceof HomeFixError ? error.code : "INTEGRATION_UNAVAILABLE" });
       await repo.updateRequestStatus(scope, request.id, "needs_attention", "Live Taskrabbit search failed; no provider options were created.", "system", "agent", "live_taskrabbit").catch(() => {});
@@ -412,7 +415,18 @@ export function registerHomeFixTools(
     const options = await repo.createServiceOptions(scope, result.options.map((option) => ({ ...option, serviceSearchId: search.id, requestId: request.id, retrievedAt: result.retrievedAt, expiresAt: result.expiresAt })));
     if (options.length) await repo.updateRequestStatus(scope, request.id, "options_ready", undefined, "system", "agent", "live_taskrabbit");
     else await repo.updateRequestStatus(scope, request.id, "needs_attention", "Taskrabbit returned no matching options.", "system", "agent", "live_taskrabbit");
-    return { content: [{ type: "text", text: options.length ? `${options.length} live Taskrabbit option(s) found.` : "Taskrabbit returned no matching options." }], structuredContent: { status: options.length ? "available" as const : "empty" as const, searchId: search.id, options, retrievedAt: result.retrievedAt, expiresAt: result.expiresAt, source: "live_taskrabbit" as const } };
+    const response = {
+      status: options.length ? "available" as const : "empty" as const,
+      searchId: search.id,
+      options,
+      retrievedAt: result.retrievedAt,
+      expiresAt: result.expiresAt,
+      source: "live_taskrabbit" as const,
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(response) }],
+      structuredContent: response,
+    };
   }));
 
   const createBookingHandoff = server.tool({
@@ -456,7 +470,7 @@ export function registerHomeFixTools(
       const refreshed = await adapter.checkAvailability(userId, {
         ...refreshInput,
         serviceCategory: refreshInput.serviceCategory!,
-      });
+      }, ctx.signal);
       const freshCriteria = { ...criteria, ...refreshInput };
       const freshSearch = await repo.createServiceSearch(scope, { requestId, locationSnapshot: latest?.location_snapshot && typeof latest.location_snapshot === "object" ? latest.location_snapshot as Record<string, string> : {}, searchCriteria: freshCriteria, status: refreshed.options.length ? "completed" : "empty", resultCount: refreshed.options.length, retrievedAt: refreshed.retrievedAt });
       await repo.createServiceOptions(scope, refreshed.options.map((option) => ({ ...option, serviceSearchId: freshSearch.id, requestId, retrievedAt: refreshed.retrievedAt, expiresAt: refreshed.expiresAt })));
@@ -472,7 +486,7 @@ export function registerHomeFixTools(
       questionnaire: bookingContext && Array.isArray(bookingContext.questionnaire) ? bookingContext.questionnaire : [],
       location: bookingContext && bookingContext.location && typeof bookingContext.location === "object" ? bookingContext.location as { address: string; postal_code: string; lat: number; lng: number } : undefined,
       taskTemplateId: selected.taskTemplateId ?? undefined,
-    });
+    }, ctx.signal);
     const handoff = await repo.createBookingHandoff(scope, requestId, serviceOptionId, link.bookingUrl, idempotencyKey, link.retrievedAt);
     return { content: [{ type: "text", text: "A live Taskrabbit handoff is ready. Ask the user to click Continue to Taskrabbit before opening it." }], structuredContent: handoff };
   }));

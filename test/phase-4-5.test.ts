@@ -170,8 +170,8 @@ test("adapter aborts a provider execution that exceeds its configured timeout", 
   ];
   const session: ComposioSession = {
     tools,
-    execute: async (_name, _arguments, signal) => await new Promise((_resolve, reject) => {
-      signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    execute: async (_name, _arguments, _options, requestOptions) => await new Promise((_resolve, reject) => {
+      requestOptions?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
     }),
   };
   const adapter = new ComposioTaskrabbitAdapter({ executionTimeoutMs: 20, sessionFactory: async () => session });
@@ -193,6 +193,24 @@ test("adapter does not treat a failed Composio execution as an empty search", as
   await assert.rejects(
     () => adapter.checkAvailability("user-a", { postalCode: "10001", serviceCategory: "plumbing" }),
     (error: unknown) => error instanceof HomeFixError && error.code === "INTEGRATION_UNAVAILABLE",
+  );
+});
+
+test("adapter does not treat a blocked Composio execution as an empty search", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
+  ];
+  const session: ComposioSession = {
+    tools,
+    execute: async () => ({ data: {}, error: "Approval required", logId: "log-availability-blocked", resultType: "blocked" }),
+  };
+  const adapter = new ComposioTaskrabbitAdapter({ sessionFactory: async () => session });
+  await assert.rejects(
+    () => adapter.checkAvailability("user-a", { postalCode: "10001", serviceCategory: "plumbing" }),
+    (error: unknown) => error instanceof HomeFixError
+      && error.code === "INTEGRATION_UNAVAILABLE"
+      && error.message.includes("blocked")
+      && error.nextAction === "review_composio_session_policy",
   );
 });
 

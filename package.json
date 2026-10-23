@@ -32,7 +32,7 @@
     "oauth:token": "node scripts/get-oauth-token.mjs"
   },
   "dependencies": {
-    "@composio/core": "^0.25.0",
+    "@composio/core": "^0.27.0",
     "@mcp-use/client": "^2.4.3",
     "@modelcontextprotocol/client": "2.3.1",
     "mcp-use": "2.10.0",

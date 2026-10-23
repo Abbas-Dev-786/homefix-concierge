@@ -35,7 +35,12 @@ type DiscoveredTool = {
 export type ComposioSession = {
   client?: Client;
   tools: DiscoveredTool[];
-  execute?: (toolName: string, arguments_: JsonObject, signal?: AbortSignal) => Promise<unknown>;
+  execute?: (
+    toolName: string,
+    arguments_: JsonObject,
+    options?: Record<string, unknown>,
+    requestOptions?: { signal?: AbortSignal },
+  ) => Promise<unknown>;
 };
 
 export type ServiceDiscoveryInput = {
@@ -549,7 +554,12 @@ async function defaultSessionFactory(apiKey: string, baseUrl: string, timeoutMs:
     ) => Promise<unknown>;
     return {
       tools,
-      execute: (toolName, arguments_, signal) => executeWithRequestOptions(toolName, arguments_, undefined, signal ? { signal } : undefined),
+      execute: (toolName, arguments_, _options, requestOptions) => executeWithRequestOptions(
+        toolName,
+        arguments_,
+        undefined,
+        requestOptions,
+      ),
     };
   } catch (error) {
     if (isComposioPermissionError(error)) {
@@ -623,7 +633,12 @@ export class ComposioTaskrabbitAdapter {
     }
   }
 
-  private async call(userId: string, capability: IntegrationCapability, input: ServiceDiscoveryInput | AvailabilityInput | BookingLinkInput) {
+  private async call(
+    userId: string,
+    capability: IntegrationCapability,
+    input: ServiceDiscoveryInput | AvailabilityInput | BookingLinkInput,
+    requestSignal?: AbortSignal,
+  ) {
     const session = await this.session(userId);
     const tool = this.capabilities(session)[capability];
     if (!tool) throw new HomeFixError("INTEGRATION_UNAVAILABLE", `Taskrabbit capability ${capability} is unavailable.`, false, "check_taskrabbit_status");
@@ -633,9 +648,12 @@ export class ComposioTaskrabbitAdapter {
       const executionTimeoutMs = this.options.executionTimeoutMs ?? Math.max(this.options.timeoutMs ?? 12000, 30_000);
       if (session.execute) {
         const controller = new AbortController();
+        const abortFromRequest = () => controller.abort();
+        if (requestSignal?.aborted) controller.abort();
+        else requestSignal?.addEventListener("abort", abortFromRequest, { once: true });
         const timer = setTimeout(() => controller.abort(), executionTimeoutMs);
         try {
-          result = await session.execute(tool.name, args, controller.signal);
+          result = await session.execute(tool.name, args, undefined, { signal: controller.signal });
         } catch (error) {
           if (controller.signal.aborted) {
             throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit did not respond before the provider execution timeout.", true, "retry_taskrabbit");
@@ -643,11 +661,24 @@ export class ComposioTaskrabbitAdapter {
           throw error;
         } finally {
           clearTimeout(timer);
+          requestSignal?.removeEventListener("abort", abortFromRequest);
         }
         if (isComposioPermissionError(result)) throw composioPermissionError();
         const sessionResult = asObject(result);
-        if (sessionResult?.resultType === "failed" || sessionResult?.successful === false || sessionResult?.error) {
-          throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit could not complete that live request.", true, "retry_taskrabbit");
+        if (
+          sessionResult?.resultType === "failed"
+          || sessionResult?.resultType === "blocked"
+          || sessionResult?.successful === false
+          || sessionResult?.error
+        ) {
+          throw new HomeFixError(
+            "INTEGRATION_UNAVAILABLE",
+            sessionResult?.resultType === "blocked"
+              ? "Composio blocked the Taskrabbit request before it could run. Review the Composio session policy or approval requirement."
+              : "Taskrabbit could not complete that live request.",
+            sessionResult?.resultType !== "blocked",
+            sessionResult?.resultType === "blocked" ? "review_composio_session_policy" : "retry_taskrabbit",
+          );
         }
         return extractSessionPayload(result);
       }
@@ -665,22 +696,22 @@ export class ComposioTaskrabbitAdapter {
     return extractPayload(result as { structuredContent?: unknown; content?: Array<{ type: string; text?: string }> });
   }
 
-  async listSupportedServices(userId: string, input: ServiceDiscoveryInput): Promise<ServiceDiscoveryResult> {
+  async listSupportedServices(userId: string, input: ServiceDiscoveryInput, requestSignal?: AbortSignal): Promise<ServiceDiscoveryResult> {
     const retrievedAt = new Date().toISOString();
-    const payload = await this.call(userId, "listServices", input);
+    const payload = await this.call(userId, "listServices", input, requestSignal);
     return { services: normalizeServices(payload), retrievedAt, source: "live_taskrabbit" };
   }
 
-  async checkAvailability(userId: string, input: AvailabilityInput): Promise<AvailabilityResult> {
+  async checkAvailability(userId: string, input: AvailabilityInput, requestSignal?: AbortSignal): Promise<AvailabilityResult> {
     const retrievedAt = new Date().toISOString();
     const expiresAt = new Date(Date.parse(retrievedAt) + FRESHNESS_MS).toISOString();
-    const payload = await this.call(userId, "checkAvailability", input);
+    const payload = await this.call(userId, "checkAvailability", input, requestSignal);
     return { options: normalizeOptions(payload, input), retrievedAt, expiresAt, source: "live_taskrabbit" };
   }
 
-  async createBookingLink(userId: string, input: BookingLinkInput): Promise<BookingLinkResult> {
+  async createBookingLink(userId: string, input: BookingLinkInput, requestSignal?: AbortSignal): Promise<BookingLinkResult> {
     const retrievedAt = new Date().toISOString();
-    const payload = await this.call(userId, "createDeepLink", input);
+    const payload = await this.call(userId, "createDeepLink", input, requestSignal);
     const object = asObject(payload);
     const candidate = typeof payload === "string" ? payload : text(valueAt(object ?? {}, ["bookingUrl", "booking_url", "deepLink", "deep_link", "url", "link"]));
     if (!candidate) throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit did not return a booking link.", true, "retry_taskrabbit_link");
