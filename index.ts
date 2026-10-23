@@ -22,7 +22,7 @@ const serverConfig = {
   version: "0.1.0-phase-6",
   description: "HomeFix Concierge for household repair intake, live provider discovery, and user-approved booking handoffs.",
   instructions:
-    "Coordinate HomeFix repair requests using the authenticated household context. Use live Taskrabbit results only when returned by the integration, show timestamps, ask for explicit user selection, and never claim a repair is booked unless the user reports that outcome.",
+    "Coordinate HomeFix repair requests using the authenticated household context. Before calling find_service_options, confirm a service category, location, desired date, and desired time window; if any are missing, ask the user first and do not call the provider. Use live Taskrabbit results only when returned by the integration, show timestamps, ask for explicit user selection, and never claim a repair is booked unless the user reports that outcome.",
   websiteUrl: "https://mcp-use.com",
   basePath: env.MCP_ENDPOINT_PATH,
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["512x512"] }],

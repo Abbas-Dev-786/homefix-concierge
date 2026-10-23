@@ -187,8 +187,8 @@ Output: returned categories and source mode. If external schema does not accept 
 
 #### Tool 4: `find_service_options`
 
-Input: `requestId`, normalized `serviceCategory`, city/region/postal code, optional desired date/time window, and only the scoping answers required by actual integration schema.  
-Behavior: load the repair request, validate location and category, call the Taskrabbit adapter, normalize results, persist `service_search` and each option, then return IDs and sanitized options. Do not accept a caller-supplied source mode; server decides it.
+Input: `requestId`, normalized `serviceCategory`, city/region/postal code, desired date, desired time window, and only the scoping answers required by actual integration schema.
+Behavior: load the repair request and saved home profile, merge saved values with explicit inputs, and preflight category, location, date, and time before changing state or calling Taskrabbit. If any required value is missing or invalid, return `status: "needs_user_input"`, the `missingFields`, and a direct `question` with `nextAction: "ask_user"`; do not return an integration error and do not create a search record. Only after preflight passes should HomeFix validate location/category, call the Taskrabbit adapter, normalize results, persist `service_search` and each option, then return IDs and sanitized options. Do not accept a caller-supplied source mode; server decides it.
 
 #### Tool 5: `compare_service_options`
 

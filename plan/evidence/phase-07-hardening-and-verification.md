@@ -15,7 +15,7 @@ Implemented locally on 2026-10-19.
 | --- | --- | --- |
 | `npm run typecheck` | Passed | `mcp-use` reported no type errors. |
 | `npm run build` | Passed | Built server and `homefix-dashboard` View. |
-| `npm run test:unit` | Passed | 18 tests passed, including scope isolation, idempotency, state transitions, expiry, provider failure normalization, export/deletion scope, redaction, and rate limiting. |
+| `npm run test:unit` | Passed | 22 tests passed, including scope isolation, idempotency, state transitions, expiry, provider failure normalization, export/deletion scope, redaction, rate limiting, and preflight coverage for service listing, service search, and stale handoff refreshes. |
 | `npm run verify:protocol` | Passed locally | Exact negotiated version `2025-11-25`; initialized notification sent; oversized request rejected with HTTP 413; 20 tools; View resource `ui://views/homefix-dashboard.html`; readiness HTTP 200; consent HTTP 200; unauthenticated dashboard rejected. |
 | `npm run verify:security` | Passed | 4 compiled View assets scanned; no forbidden secret patterns found. |
 | `npm run verify:deployed` | Passed against configured public endpoint | Public endpoint negotiated `2025-11-25`, readiness HTTP 200, consent HTTP 200, and rejected unauthenticated protected tools. The endpoint currently contains the previous 18-tool deployment, so this is not evidence that the new Phase 7 source is deployed. |
