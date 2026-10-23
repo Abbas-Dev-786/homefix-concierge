@@ -228,6 +228,7 @@ npm run verify:security  # Scan compiled View assets for secrets
 npm run verify:deployed  # Public endpoint protocol/readiness/consent check
 npm run verify:phase2-3  # Two-user deployed persistence and isolation check
 npm run oauth:token      # Obtain a temporary OAuth token through PKCE
+npm run oauth:refresh    # Refresh an existing access token using PHASE1_REFRESH_TOKEN
 ```
 
 ## Alexa+ runtime compliance

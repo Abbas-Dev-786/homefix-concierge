@@ -29,7 +29,8 @@
     "verify:phase2-3": "node scripts/verify-phase2-3.mjs",
     "verify:deployed": "node scripts/verify-deployed.mjs",
     "verify:security": "npm run build && node scripts/verify-security.mjs",
-    "oauth:token": "node scripts/get-oauth-token.mjs"
+    "oauth:token": "node scripts/get-oauth-token.mjs",
+    "oauth:refresh": "node scripts/get-oauth-token.mjs --refresh"
   },
   "dependencies": {
     "@composio/core": "^0.27.0",

@@ -88,6 +88,58 @@ test("find_service_options asks for missing timing before changing state or call
   assert.equal(providerCalls, 0);
 });
 
+test("find_service_options describes a handoff option when Taskrabbit returns no exact slots", async () => {
+  const handlers: Record<string, (input: unknown, context: unknown) => Promise<any>> = {};
+  const fakeServer = {
+    tool(definition: { name: string }, handler: (input: unknown, context: unknown) => Promise<any>) {
+      handlers[definition.name] = handler;
+      return definition.name;
+    },
+  };
+  const scope = { householdId: "household-a", displayName: "A", role: "owner" };
+  const repository = {
+    resolveHousehold: async () => scope,
+    getRequest: async () => ({ id: "request-a", title: "Main hall AC", description: "AC is not working", serviceCategory: "AC/HVAC repair", desiredDate: "2026-10-24", desiredTimeWindow: "10:00 AM-12:00 PM" }),
+    getProfile: async () => ({ city: "New York", region: "NY", postalCode: "10001" }),
+    updateRequestStatus: async () => undefined,
+    createServiceSearch: async () => ({ id: "search-a", status: "completed", resultCount: 1, retrievedAt: "2026-10-23T00:00:00.000Z", source: "supabase" }),
+    createServiceOptions: async (_scope: unknown, options: any[]) => options.map((option) => ({ id: "option-a", searchId: "search-a", requestId: "request-a", ...option, source: "live_taskrabbit" })),
+  };
+  const adapter = {
+    checkAvailability: async () => ({
+      options: [{
+        title: "Appliance Installation & Repairs",
+        providerName: null,
+        serviceCategory: "AC/HVAC repair",
+        locationLabel: "New York, NY, 10001",
+        estimateMin: 33.33,
+        estimateMax: 155.55,
+        priceLabel: "Average rate",
+        currencyCode: "USD",
+        availabilitySummary: "Available",
+        availabilitySlots: [],
+        scopingQuestions: [],
+        taskTemplateId: "appliance_installation_repairs",
+        bookingContext: { categoryId: "appliance_installation_repairs", locale: "en-US", questionnaire: [] },
+      }],
+      retrievedAt: "2026-10-23T00:00:00.000Z",
+      expiresAt: "2026-10-23T00:15:00.000Z",
+      source: "live_taskrabbit" as const,
+    }),
+  };
+  registerHomeFixTools(fakeServer as never, repository as never, adapter as never);
+
+  const result = await handlers.find_service_options(
+    { requestId: "request-a" },
+    { auth: { user: { id: "user-a" } }, signal: new AbortController().signal },
+  );
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.status, "available");
+  assert.equal(result.structuredContent.nextAction, "select_option");
+  assert.match(result.structuredContent.message, /select an option/i);
+  assert.deepEqual(result.structuredContent.options[0].availabilitySlots, []);
+});
+
 test("list_supported_services asks for location before calling Taskrabbit", async () => {
   const handlers: Record<string, (input: unknown, context: unknown) => Promise<any>> = {};
   const fakeServer = {

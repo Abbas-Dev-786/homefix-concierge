@@ -107,6 +107,57 @@ const redirectPort = Number(process.env.OAUTH_REDIRECT_PORT ?? "8765");
 if (!Number.isInteger(redirectPort) || redirectPort < 1024 || redirectPort > 65535) {
   throw new Error("OAUTH_REDIRECT_PORT must be an integer between 1024 and 65535");
 }
+const outputPath = process.env.OAUTH_TOKEN_FILE?.trim() || ".oauth-token.env";
+
+if (process.argv.includes("--refresh")) {
+  let existingContent = "";
+  try {
+    existingContent = await fs.readFile(outputPath, "utf8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  const refreshToken = existingContent.match(/^PHASE1_REFRESH_TOKEN=(.+)$/m)?.[1]?.trim() || process.env.PHASE1_REFRESH_TOKEN?.trim();
+  const accessToken = existingContent.match(/^PHASE1_TEST_ACCESS_TOKEN=(.+)$/m)?.[1]?.trim() || process.env.PHASE1_TEST_ACCESS_TOKEN?.trim();
+
+  if (!refreshToken) {
+    throw new Error(`Cannot refresh: No PHASE1_REFRESH_TOKEN found in ${outputPath} or environment.`);
+  }
+
+  let clientId;
+  if (accessToken) {
+    try {
+      const parts = accessToken.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+        clientId = payload.client_id;
+      }
+    } catch {}
+  }
+  if (!clientId) {
+    throw new Error("Cannot refresh: Could not determine client_id from existing access token.");
+  }
+
+  console.log("Refreshing OAuth token using refresh token...");
+  const tokens = await jsonResponse(await fetch(metadata.token_endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: clientId,
+    }),
+  }), "OAuth token refresh");
+
+  if (!tokens.access_token) throw new Error("OAuth token refresh did not return access_token");
+  await fs.writeFile(outputPath, `PHASE1_TEST_ACCESS_TOKEN=${tokens.access_token}\n${tokens.refresh_token ? `PHASE1_REFRESH_TOKEN=${tokens.refresh_token}\n` : ""}`, { encoding: "utf8", mode: 0o600 });
+  const expiresAt = typeof tokens.expires_in === "number" ? new Date(Date.now() + tokens.expires_in * 1000).toISOString() : "unknown";
+  console.log(`OAuth token refreshed and saved to ${outputPath}.`);
+  console.log(`Access-token expiry: ${expiresAt}`);
+  console.log("Load it in PowerShell with:");
+  console.log(`$env:PHASE1_TEST_ACCESS_TOKEN = (Get-Content '${outputPath}' | Select-String '^PHASE1_TEST_ACCESS_TOKEN=').Line.Split('=', 2)[1]`);
+  process.exit(0);
+}
+
 const redirectUri = `http://127.0.0.1:${redirectPort}/callback`;
 const verifier = randomString(48);
 const challenge = base64url(crypto.createHash("sha256").update(verifier).digest());
@@ -159,7 +210,6 @@ const tokens = await jsonResponse(await fetch(metadata.token_endpoint, {
 }), "OAuth token exchange");
 
 if (!tokens.access_token) throw new Error("OAuth token exchange did not return access_token");
-const outputPath = process.env.OAUTH_TOKEN_FILE?.trim() || ".oauth-token.env";
 await fs.writeFile(outputPath, `PHASE1_TEST_ACCESS_TOKEN=${tokens.access_token}\n${tokens.refresh_token ? `PHASE1_REFRESH_TOKEN=${tokens.refresh_token}\n` : ""}`, { encoding: "utf8", mode: 0o600 });
 const expiresAt = typeof tokens.expires_in === "number" ? new Date(Date.now() + tokens.expires_in * 1000).toISOString() : "unknown";
 console.log(`OAuth token saved to ${outputPath}.`);

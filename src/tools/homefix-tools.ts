@@ -79,6 +79,8 @@ const serviceDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
 
 const serviceOptionOutputSchema = z.object({
   id: z.string(),
+  searchId: z.string(),
+  requestId: z.string(),
   title: z.string(),
   providerName: z.string().nullable(),
   serviceCategory: z.string(),
@@ -91,8 +93,14 @@ const serviceOptionOutputSchema = z.object({
   availabilitySlots: z.array(z.unknown()),
   scopingQuestions: z.array(z.unknown()),
   taskTemplateId: z.string().nullable(),
+  bookingContext: z.object({
+    categoryId: z.string().nullable(),
+    locale: z.string(),
+    questionnaire: z.array(z.object({ param: z.string(), question: z.string(), answer: z.string() })),
+    location: z.object({ address: z.string(), postal_code: z.string(), lat: z.number(), lng: z.number() }).optional(),
+  }).nullable(),
   retrievedAt: z.string(),
-  expiresAt: z.string(),
+  expiresAt: z.string().nullable(),
   source: z.literal("live_taskrabbit"),
 });
 
@@ -112,6 +120,8 @@ const findServiceOptionsOutputSchema = z.union([
     options: z.array(serviceOptionOutputSchema),
     retrievedAt: z.string(),
     expiresAt: z.string(),
+    nextAction: z.enum(["select_option", "retry_search"]),
+    message: z.string(),
     source: z.literal("live_taskrabbit"),
   }),
 ]);
@@ -369,7 +379,7 @@ export function registerHomeFixTools(
     ...protectedTool,
     name: "find_service_options",
     title: "Find live Taskrabbit options",
-    description: "Check live Taskrabbit availability, pricing, and scoping questions for one persisted repair. Before any provider call, use saved values when available; if service category, location, desired date, or desired time window is missing, return needs_user_input so the agent asks the user first.",
+    description: "Check live Taskrabbit availability, pricing, and scoping questions for one persisted repair. Taskrabbit may return a market-level handoff option without exact appointment slots; an empty availabilitySlots array is valid and means the user must browse/select a Tasker through the handoff. Do not call that response invalid. Before any provider call, use saved values when available; if service category, location, desired date, or desired time window is missing, return needs_user_input so the agent asks the user first. After the user selects an option, call create_booking_handoff; never claim a repair is booked unless the user reports that outcome.",
     inputSchema: z.object({ requestId: z.string().uuid(), serviceCategory: z.string().trim().max(120).optional(), city: z.string().trim().max(120).optional(), region: z.string().trim().max(120).optional(), postalCode: z.string().trim().max(24).optional(), desiredDate: z.string().trim().max(32).optional(), desiredTimeWindow: z.string().trim().max(120).optional(), scopingAnswers: z.record(z.string(), scopingAnswerSchema).optional() }).strict(),
     outputSchema: findServiceOptionsOutputSchema,
   }, withErrors(async (input, ctx) => {
@@ -421,10 +431,14 @@ export function registerHomeFixTools(
       options,
       retrievedAt: result.retrievedAt,
       expiresAt: result.expiresAt,
+      nextAction: options.length ? "select_option" as const : "retry_search" as const,
+      message: options.length
+        ? "Live Taskrabbit availability was found. Select an option to prepare a Taskrabbit handoff; no booking has been made."
+        : "Taskrabbit returned no matching options. Adjust the repair details or timing and search again.",
       source: "live_taskrabbit" as const,
     };
     return {
-      content: [{ type: "text", text: JSON.stringify(response) }],
+      content: [{ type: "text", text: response.message }],
       structuredContent: response,
     };
   }));
