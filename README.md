@@ -11,7 +11,6 @@ The server also exposes the read-only `get_current_date_time` tool for fresh dat
 ## Live project
 
 - Public MCP endpoint: <https://dark-spark-yobvc.run.mcp-use.com/mcp>
-- Local Inspector: <http://localhost:3000/mcp/inspector>
 - MCP protocol: `2025-11-25`
 - Deployment: Manufact Cloud
 - Primary track: Alexa+
@@ -116,6 +115,24 @@ sequenceDiagram
 | TypeScript / Node.js / npm | Application implementation, builds, tests, and scripts |
 | Manufact Cloud | Public MCP server and compiled View deployment |
 
+### Testing credentials for PROD
+
+Use these credentials only for the configured demo/testing account:
+
+```text
+Email: testuser@gmail.com
+Password: test1234
+```
+
+Fresh user without any pre configuration
+```text
+Email: newuser@gmail.com
+Password: test1234
+```
+
+Use this for production testing
+
+
 ## Repository structure
 
 ```text
@@ -137,9 +154,7 @@ sequenceDiagram
 │   └── tools/homefix-tools.ts        # HomeFix MCP tool contracts and handlers
 ├── supabase/migrations/              # Ordered Postgres schema and RLS migrations
 ├── test/                             # Phase-specific TypeScript test fixtures/checks
-├── scripts/                          # Unit, protocol, security, OAuth, and deployment checks
-├── docs/                             # PRD, technical specification, coding requirements
-├── plan/                             # Phase plans and implementation evidence
+├── scripts/                          # Unit, protocol, security, OAuth, and requirements
 ├── public/                           # Public View assets and icons
 ├── .env.example                      # Safe environment variable template
 ├── LICENSE                            # MIT license
@@ -217,6 +232,7 @@ The local endpoints are:
 
 Without external credentials, the server can start for protocol development but remains degraded. Authenticated household workflows require Supabase and Composio configuration.
 
+
 ## Commands and validation
 
 ```bash
@@ -226,7 +242,6 @@ npm run build            # Production server and View build
 npm run verify:protocol  # Local MCP handshake, schemas, View binding, auth rejection
 npm run verify:security  # Scan compiled View assets for secrets
 npm run verify:deployed  # Public endpoint protocol/readiness/consent check
-npm run verify:phase2-3  # Two-user deployed persistence and isolation check
 npm run oauth:token      # Obtain a temporary OAuth token through PKCE
 npm run oauth:refresh    # Refresh an existing access token using PHASE1_REFRESH_TOKEN
 ```

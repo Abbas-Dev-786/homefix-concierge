@@ -26,7 +26,6 @@
     "typecheck": "mcp-use typecheck",
     "test:unit": "node scripts/run-unit-tests.mjs",
     "verify:protocol": "node scripts/verify-protocol.mjs",
-    "verify:phase2-3": "node scripts/verify-phase2-3.mjs",
     "verify:deployed": "node scripts/verify-deployed.mjs",
     "verify:security": "npm run build && node scripts/verify-security.mjs",
     "oauth:token": "node scripts/get-oauth-token.mjs",
