@@ -164,6 +164,66 @@ test("adapter unwraps a successful session execute MCP envelope", async () => {
   assert.equal(result.options[0]?.taskTemplateId, "plumbing_help");
 });
 
+test("adapter normalizes the native Taskrabbit availability payload into a handoff-capable option", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
+  ];
+  const session: ComposioSession = {
+    tools,
+    execute: async () => ({
+      data: {
+        available: true,
+        categoryId: "appliance_installation_repairs",
+        serviceLabel: "Appliance Installation & Repairs",
+        location: { address: "New York City, NY", postal_code: "10001", lat: 40.7484, lng: -73.9967 },
+        pricing: { currency: "USD", rateRange: { low: 33.33, high: 155.55 } },
+        scopingQuestions: [{ id: "job_size", param: "job_size", optional: false, question: "How big is your task?" }],
+      },
+      error: null,
+      resultType: "completed",
+    }),
+  };
+  const adapter = new ComposioTaskrabbitAdapter({ sessionFactory: async () => session });
+  const result = await adapter.checkAvailability("user-a", { postalCode: "10001", serviceCategory: "Appliance Installation & Repairs" });
+  assert.equal(result.options.length, 1);
+  assert.equal(result.options[0]?.taskTemplateId, "appliance_installation_repairs");
+  assert.equal(result.options[0]?.estimateMin, 33.33);
+  assert.equal(result.options[0]?.estimateMax, 155.55);
+  assert.equal(result.options[0]?.bookingContext.categoryId, "appliance_installation_repairs");
+});
+
+test("adapter unwraps the legacy Composio response.body.data envelope", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
+  ];
+  const session: ComposioSession = {
+    tools,
+    execute: async () => ({
+      data: {
+        success: true,
+        response: { body: { successfull: true, error: null, data: { available: true, categoryId: "plumbing_help", serviceLabel: "Plumbing help" } } },
+      },
+      error: null,
+      resultType: "completed",
+    }),
+  };
+  const adapter = new ComposioTaskrabbitAdapter({ sessionFactory: async () => session });
+  const result = await adapter.checkAvailability("user-a", { postalCode: "10001", serviceCategory: "plumbing" });
+  assert.equal(result.options[0]?.taskTemplateId, "plumbing_help");
+});
+
+test("adapter rejects a successful Composio call with an unrecognized provider payload", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
+  ];
+  const session: ComposioSession = { tools, execute: async () => ({ data: { unexpected: "shape" }, error: null, resultType: "completed" }) };
+  const adapter = new ComposioTaskrabbitAdapter({ sessionFactory: async () => session });
+  await assert.rejects(
+    () => adapter.checkAvailability("user-a", { postalCode: "10001", serviceCategory: "plumbing" }),
+    (error: unknown) => error instanceof HomeFixError && error.message.includes("invalid availability response"),
+  );
+});
+
 test("adapter aborts a provider execution that exceeds its configured timeout", async () => {
   const tools: ComposioSession["tools"] = [
     { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },

@@ -188,6 +188,23 @@ function unwrapToolResult(value: unknown): unknown {
   if (!object) return value;
   if (object.structuredContent !== undefined) return object.structuredContent;
   if (Array.isArray(object.content)) return extractPayload(object as { structuredContent?: unknown; content?: Array<{ type: string; text?: string }> });
+  // Composio has returned both the native Tool Router payload and a legacy
+  // execution envelope containing response.body.data. Accept both forms so a
+  // provider success cannot be mistaken for an invalid/empty MCP result.
+  const response = asObject(object.response);
+  const body = asObject(response?.body ?? object.body);
+  if (body) return unwrapToolResult(body);
+  if (
+    Object.prototype.hasOwnProperty.call(object, "data")
+    && (object.successful === true
+      || object.successfull === true
+      || Object.prototype.hasOwnProperty.call(object, "request")
+      || Object.prototype.hasOwnProperty.call(object, "response")
+      || Object.prototype.hasOwnProperty.call(object, "version")
+      || Object.prototype.hasOwnProperty.call(object, "resultType"))
+  ) {
+    return unwrapToolResult(object.data);
+  }
   return value;
 }
 
@@ -196,6 +213,14 @@ function extractSessionPayload(result: unknown): unknown {
   if (!object) return result;
   if (object.resultType === "failed" || object.error) return object;
   return Object.prototype.hasOwnProperty.call(object, "data") ? unwrapToolResult(object.data) : unwrapToolResult(result);
+}
+
+function providerPayloadError(payload: unknown) {
+  const object = asObject(payload);
+  if (!object) return null;
+  const success = valueAt(object, ["success", "successfull"]);
+  const error = text(valueAt(object, ["error", "message"]));
+  return success === false || error ? error ?? "Taskrabbit returned an unsuccessful response." : null;
 }
 
 function diagnosticText(value: unknown, depth = 0): string {
@@ -415,7 +440,12 @@ function buildQuestionnaire(
 
 function normalizeOptions(payload: unknown, input: AvailabilityInput): AvailabilityOption[] {
   const items = arrayFromPayload(payload, ["options", "serviceOptions", "service_options", "results", "matches", "items"]);
-  const candidates = items.length ? items : (asObject(payload) ? [payload] : []);
+  const object = asObject(payload);
+  const hasAvailabilityShape = Array.isArray(payload)
+    || items.length > 0
+    || typeof object?.available === "boolean"
+    || Boolean(valueAt(object ?? {}, ["categoryId", "category_id", "taskTemplateId", "serviceLabel", "service"]));
+  const candidates = items.length ? items : (hasAvailabilityShape && object ? [object] : []);
   return candidates.flatMap((item) => {
     const object = asObject(item);
     if (!object) return [];
@@ -722,6 +752,16 @@ export class ComposioTaskrabbitAdapter {
     const retrievedAt = new Date().toISOString();
     const expiresAt = new Date(Date.parse(retrievedAt) + FRESHNESS_MS).toISOString();
     const payload = await this.call(userId, "checkAvailability", input, requestSignal);
+    const providerError = providerPayloadError(payload);
+    if (providerError) throw new HomeFixError("INTEGRATION_UNAVAILABLE", providerError, true, "retry_taskrabbit");
+    const object = asObject(payload);
+    const hasAvailabilityShape = Array.isArray(payload)
+      || arrayFromPayload(payload, ["options", "serviceOptions", "service_options", "results", "matches", "items"]).length > 0
+      || typeof object?.available === "boolean"
+      || Boolean(valueAt(object ?? {}, ["categoryId", "category_id", "taskTemplateId", "serviceLabel", "service"]));
+    if (!hasAvailabilityShape) {
+      throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit returned an invalid availability response.", true, "retry_taskrabbit");
+    }
     return { options: normalizeOptions(payload, input), retrievedAt, expiresAt, source: "live_taskrabbit" };
   }
 
