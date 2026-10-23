@@ -447,7 +447,7 @@ export function registerHomeFixTools(
     ...protectedTool,
     name: "create_booking_handoff",
     title: "Prepare Taskrabbit booking handoff",
-    description: "Prepare a validated live Taskrabbit link after the user selects one fresh option. This saves a ready handoff and never opens the external page or claims booking.",
+    description: "Prepare a validated live Taskrabbit link after the user selects one fresh option. The successful response includes the complete bookingUrl in both model-visible text and structuredContent. This saves a ready handoff and never opens the external page or claims booking.",
     inputSchema: z.object({ requestId: z.string().uuid(), serviceOptionId: z.string().uuid(), idempotencyKey: z.string().trim().min(8).max(128) }).strict(),
     outputSchema: z.union([needsUserInputOutputSchema, z.object({ id: z.string(), status: z.literal("ready"), bookingUrl: z.string().url(), retrievedAt: z.string(), source: sourceSchema })]),
   }, withErrors(async ({ requestId, serviceOptionId, idempotencyKey }, ctx) => {
@@ -456,7 +456,13 @@ export function registerHomeFixTools(
     const scope = await repo.resolveHousehold(userId);
     if (!scope) throw new HomeFixError("ONBOARDING_REQUIRED", "Create your household before preparing a booking handoff.", false, "create_household");
     const existing = await repo.existingBookingHandoff(scope, idempotencyKey);
-    if (existing) return { content: [{ type: "text", text: "The existing Taskrabbit handoff is ready. It has not been opened." }], structuredContent: { ...existing, status: "ready" as const } };
+    if (existing) {
+      const existingResult = { ...existing, status: "ready" as const };
+      return {
+        content: [{ type: "text", text: `The Taskrabbit booking link is ready: ${existingResult.bookingUrl}\n\nOpen it to choose a Tasker and complete the booking. It has not been opened or booked by HomeFix.` }],
+        structuredContent: existingResult,
+      };
+    }
     let options = await repo.listOptions(scope, requestId, [serviceOptionId]);
     let selected = options[0];
     if (!selected) throw new HomeFixError("NOT_FOUND", "That live service option was not found for this repair.", false, "refresh_options");
@@ -502,7 +508,10 @@ export function registerHomeFixTools(
       taskTemplateId: selected.taskTemplateId ?? undefined,
     }, ctx.signal);
     const handoff = await repo.createBookingHandoff(scope, requestId, serviceOptionId, link.bookingUrl, idempotencyKey, link.retrievedAt);
-    return { content: [{ type: "text", text: "A live Taskrabbit handoff is ready. Ask the user to click Continue to Taskrabbit before opening it." }], structuredContent: handoff };
+    return {
+      content: [{ type: "text", text: `The Taskrabbit booking link is ready: ${handoff.bookingUrl}\n\nOpen it to choose a Tasker and complete the booking. It has not been opened or booked by HomeFix.` }],
+      structuredContent: handoff,
+    };
   }));
 
   const getTaskrabbitStatus = server.tool({

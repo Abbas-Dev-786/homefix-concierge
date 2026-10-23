@@ -190,3 +190,35 @@ test("stale handoff refresh asks for missing timing before calling availability"
   assert.deepEqual(result.structuredContent.missingFields, ["desiredDate", "desiredTimeWindow"]);
   assert.equal(providerCalls, 0);
 });
+
+test("create_booking_handoff exposes the validated URL in model-visible content", async () => {
+  const handlers: Record<string, (input: unknown, context: unknown) => Promise<any>> = {};
+  const fakeServer = {
+    tool(definition: { name: string }, handler: (input: unknown, context: unknown) => Promise<any>) {
+      handlers[definition.name] = handler;
+      return definition.name;
+    },
+  };
+  const bookingUrl = "https://www.taskrabbit.com/book/6919/details?job_draft_guid=test";
+  const repository = {
+    resolveHousehold: async () => ({ householdId: "household-a", displayName: "A", role: "owner" }),
+    existingBookingHandoff: async () => null,
+    listOptions: async () => [{
+      id: "option-a",
+      retrievedAt: new Date().toISOString(),
+      taskTemplateId: "appliance_installation_repairs",
+      bookingContext: { categoryId: "appliance_installation_repairs", locale: "en-US", questionnaire: [] },
+    }],
+    createBookingHandoff: async () => ({ id: "handoff-a", status: "ready", bookingUrl, retrievedAt: new Date().toISOString(), source: "supabase" }),
+  };
+  const adapter = { createBookingLink: async () => ({ bookingUrl, retrievedAt: new Date().toISOString(), source: "live_taskrabbit" as const }) };
+  registerHomeFixTools(fakeServer as never, repository as never, adapter as never);
+
+  const result = await handlers.create_booking_handoff(
+    { requestId: "request-a", serviceOptionId: "option-a", idempotencyKey: "handoff-key-2" },
+    { auth: { user: { id: "user-a" } } },
+  );
+  assert.equal(result.structuredContent.bookingUrl, bookingUrl);
+  assert.match(result.content[0].text, new RegExp(bookingUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(result.content[0].text, /choose a Tasker and complete the booking/i);
+});
