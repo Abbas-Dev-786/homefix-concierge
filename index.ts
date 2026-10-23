@@ -19,7 +19,7 @@ import { clientAddress, MAX_REQUEST_BYTES, SlidingWindowRateLimiter } from "./sr
 const serverConfig = {
   name: "homefix-concierge",
   title: "HomeFix Concierge",
-  version: "0.1.0",
+  version: "1.0",
   description: "HomeFix Concierge for household repair intake, live provider discovery, and user-approved booking handoffs.",
   instructions:
     "Coordinate HomeFix repair requests using the authenticated household context. Before calling find_service_options, confirm a service category, location, desired date, and desired time window; if any are missing, ask the user first and do not call the provider. Use live Taskrabbit results only when returned by the integration, show timestamps, ask for explicit user selection, and never claim a repair is booked unless the user reports that outcome.",
