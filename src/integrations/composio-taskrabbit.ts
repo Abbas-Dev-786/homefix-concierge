@@ -35,7 +35,7 @@ type DiscoveredTool = {
 export type ComposioSession = {
   client?: Client;
   tools: DiscoveredTool[];
-  execute?: (toolName: string, arguments_: JsonObject) => Promise<unknown>;
+  execute?: (toolName: string, arguments_: JsonObject, signal?: AbortSignal) => Promise<unknown>;
 };
 
 export type ServiceDiscoveryInput = {
@@ -171,11 +171,26 @@ function extractPayload(result: { structuredContent?: unknown; content?: Array<{
   return null;
 }
 
+function unwrapToolResult(value: unknown): unknown {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return value;
+    }
+  }
+  const object = asObject(value);
+  if (!object) return value;
+  if (object.structuredContent !== undefined) return object.structuredContent;
+  if (Array.isArray(object.content)) return extractPayload(object as { structuredContent?: unknown; content?: Array<{ type: string; text?: string }> });
+  return value;
+}
+
 function extractSessionPayload(result: unknown): unknown {
   const object = asObject(result);
   if (!object) return result;
   if (object.resultType === "failed" || object.error) return object;
-  return Object.prototype.hasOwnProperty.call(object, "data") ? object.data : result;
+  return Object.prototype.hasOwnProperty.call(object, "data") ? unwrapToolResult(object.data) : unwrapToolResult(result);
 }
 
 function diagnosticText(value: unknown, depth = 0): string {
@@ -526,7 +541,16 @@ async function defaultSessionFactory(apiKey: string, baseUrl: string, timeoutMs:
         inputSchema: (functionObject ? valueAt(functionObject, ["parameters"]) : undefined) as JsonSchema | undefined,
       });
     }
-    return { tools, execute: (toolName, arguments_) => session.execute(toolName, arguments_) };
+    const executeWithRequestOptions = session.execute as unknown as (
+      toolName: string,
+      arguments_: JsonObject,
+      options?: undefined,
+      requestOptions?: { signal?: AbortSignal },
+    ) => Promise<unknown>;
+    return {
+      tools,
+      execute: (toolName, arguments_, signal) => executeWithRequestOptions(toolName, arguments_, undefined, signal ? { signal } : undefined),
+    };
   } catch (error) {
     if (isComposioPermissionError(error)) {
       throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Composio cannot create a Taskrabbit session. Grant the project API key Session management write access and Session tool execution access.", false, "grant_composio_session_permissions");
@@ -551,7 +575,7 @@ export class ComposioTaskrabbitAdapter {
   private readonly toolMap: Partial<Record<IntegrationCapability, string>>;
   private readonly sessionFactory: SessionFactory;
 
-  constructor(private readonly options: { apiKey?: string; baseUrl?: string; toolMapJson?: string; timeoutMs?: number; sessionFactory?: SessionFactory }) {
+  constructor(private readonly options: { apiKey?: string; baseUrl?: string; toolMapJson?: string; timeoutMs?: number; executionTimeoutMs?: number; sessionFactory?: SessionFactory }) {
     this.toolMap = parseToolMap(options.toolMapJson);
     this.sessionFactory = options.sessionFactory ?? ((userId) => defaultSessionFactory(
       options.apiKey ?? "",
@@ -606,17 +630,29 @@ export class ComposioTaskrabbitAdapter {
     const args = mapArguments(tool, capability, input);
     let result: unknown;
     try {
+      const executionTimeoutMs = this.options.executionTimeoutMs ?? Math.max(this.options.timeoutMs ?? 12000, 30_000);
       if (session.execute) {
-        result = await withTimeout(session.execute(tool.name, args), this.options.timeoutMs ?? 12000);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), executionTimeoutMs);
+        try {
+          result = await session.execute(tool.name, args, controller.signal);
+        } catch (error) {
+          if (controller.signal.aborted) {
+            throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit did not respond before the provider execution timeout.", true, "retry_taskrabbit");
+          }
+          throw error;
+        } finally {
+          clearTimeout(timer);
+        }
         if (isComposioPermissionError(result)) throw composioPermissionError();
         const sessionResult = asObject(result);
-        if (sessionResult?.resultType === "failed" || sessionResult?.error) {
+        if (sessionResult?.resultType === "failed" || sessionResult?.successful === false || sessionResult?.error) {
           throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit could not complete that live request.", true, "retry_taskrabbit");
         }
         return extractSessionPayload(result);
       }
       if (!session.client) throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit execution is not configured.", false, "configure_composio_api_key");
-      result = await withTimeout(session.client.callTool({ name: tool.name, arguments: args }), this.options.timeoutMs ?? 12000);
+      result = await withTimeout(session.client.callTool({ name: tool.name, arguments: args }), executionTimeoutMs);
     } catch (error) {
       if (error instanceof HomeFixError) throw error;
       if (isComposioPermissionError(error)) throw composioPermissionError();

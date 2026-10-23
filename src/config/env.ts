@@ -21,6 +21,7 @@ const environmentSchema = z.object({
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(30),
   MAX_REQUEST_BYTES: z.coerce.number().int().positive().max(5_000_000).default(256_000),
   OUTBOUND_TIMEOUT_MS: z.coerce.number().int().positive().default(12000),
+  COMPOSIO_EXECUTION_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(30_000),
 });
 
 for (const name of [

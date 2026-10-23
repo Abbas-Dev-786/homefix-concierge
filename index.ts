@@ -108,6 +108,7 @@ const taskrabbitAdapter = composioConfigured
     baseUrl: env.COMPOSIO_API_BASE_URL,
     toolMapJson: env.TASKRABBIT_TOOL_MAP_JSON,
     timeoutMs: env.OUTBOUND_TIMEOUT_MS,
+    executionTimeoutMs: env.COMPOSIO_EXECUTION_TIMEOUT_MS,
   })
   : undefined;
 

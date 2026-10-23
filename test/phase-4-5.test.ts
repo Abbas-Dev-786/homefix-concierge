@@ -141,6 +141,61 @@ test("adapter uses the official session execute result shape", async () => {
   assert.deepEqual(calls[0]?.arguments, { postalCode: "10001" });
 });
 
+test("adapter unwraps a successful session execute MCP envelope", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
+  ];
+  const session: ComposioSession = {
+    tools,
+    execute: async () => ({
+      data: {
+        structuredContent: {
+          options: [{ title: "Plumbing", taskTemplateId: "plumbing_help", available: true }],
+        },
+      },
+      error: null,
+      logId: "log-availability-1",
+      resultType: "completed",
+    }),
+  };
+  const adapter = new ComposioTaskrabbitAdapter({ sessionFactory: async () => session });
+  const result = await adapter.checkAvailability("user-a", { postalCode: "10001", serviceCategory: "plumbing" });
+  assert.equal(result.options[0]?.title, "Plumbing");
+  assert.equal(result.options[0]?.taskTemplateId, "plumbing_help");
+});
+
+test("adapter aborts a provider execution that exceeds its configured timeout", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
+  ];
+  const session: ComposioSession = {
+    tools,
+    execute: async (_name, _arguments, signal) => await new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    }),
+  };
+  const adapter = new ComposioTaskrabbitAdapter({ executionTimeoutMs: 20, sessionFactory: async () => session });
+  await assert.rejects(
+    () => adapter.checkAvailability("user-a", { postalCode: "10001", serviceCategory: "plumbing" }),
+    (error: unknown) => error instanceof HomeFixError && error.message.includes("provider execution timeout") && error.retryable,
+  );
+});
+
+test("adapter does not treat a failed Composio execution as an empty search", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
+  ];
+  const session: ComposioSession = {
+    tools,
+    execute: async () => ({ data: {}, error: null, logId: "log-availability-failed", resultType: "failed" }),
+  };
+  const adapter = new ComposioTaskrabbitAdapter({ sessionFactory: async () => session });
+  await assert.rejects(
+    () => adapter.checkAvailability("user-a", { postalCode: "10001", serviceCategory: "plumbing" }),
+    (error: unknown) => error instanceof HomeFixError && error.code === "INTEGRATION_UNAVAILABLE",
+  );
+});
+
 test("adapter rejects missing required provider fields and unsafe links", async () => {
   const adapter = fakeAdapter({ list_supported_services: { services: [] }, check_availability: { options: [] }, generate_deep_link: { deepLink: "https://evil.example/book" } });
   await assert.rejects(
