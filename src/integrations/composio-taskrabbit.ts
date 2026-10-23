@@ -531,7 +531,10 @@ async function defaultSessionFactory(apiKey: string, baseUrl: string, timeoutMs:
       toolkits: [TASKRABBIT_TOOLKIT],
       tools: { [TASKRABBIT_TOOLKIT]: { enable: [...TASKRABBIT_TOOL_SLUGS] } },
       sessionPreset: SessionPreset.DIRECT_TOOLS,
-      mcp: true,
+      // This adapter executes through the native Tool Router API below. Do not
+      // opt into session.mcp here: that creates a second hosted Streamable HTTP
+      // endpoint which is not used by the server and can be misread by legacy
+      // SSE inspectors as an unfinished response.
     }), timeoutMs);
     const sdkTools = await withTimeout(session.tools(), timeoutMs);
     const tools: DiscoveredTool[] = [];
@@ -651,16 +654,29 @@ export class ComposioTaskrabbitAdapter {
         const abortFromRequest = () => controller.abort();
         if (requestSignal?.aborted) controller.abort();
         else requestSignal?.addEventListener("abort", abortFromRequest, { once: true });
-        const timer = setTimeout(() => controller.abort(), executionTimeoutMs);
+        // Abort the SDK request and reject locally. Some SDK/upstream versions
+        // do not reject their promise when an AbortSignal is ignored; relying
+        // on abort alone would leave the MCP tools/call request streaming
+        // forever with no final result.
+        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        const hardTimeout = new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            controller.abort();
+            reject(new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit did not respond before the provider execution timeout.", true, "retry_taskrabbit"));
+          }, executionTimeoutMs);
+        });
         try {
-          result = await session.execute(tool.name, args, undefined, { signal: controller.signal });
+          result = await Promise.race([
+            session.execute(tool.name, args, undefined, { signal: controller.signal }),
+            hardTimeout,
+          ]);
         } catch (error) {
           if (controller.signal.aborted) {
             throw new HomeFixError("INTEGRATION_UNAVAILABLE", "Taskrabbit did not respond before the provider execution timeout.", true, "retry_taskrabbit");
           }
           throw error;
         } finally {
-          clearTimeout(timer);
+          if (timeoutHandle) clearTimeout(timeoutHandle);
           requestSignal?.removeEventListener("abort", abortFromRequest);
         }
         if (isComposioPermissionError(result)) throw composioPermissionError();

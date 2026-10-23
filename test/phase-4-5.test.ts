@@ -181,6 +181,21 @@ test("adapter aborts a provider execution that exceeds its configured timeout", 
   );
 });
 
+test("adapter hard-stops an execution when the provider ignores AbortSignal", async () => {
+  const tools: ComposioSession["tools"] = [
+    { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
+  ];
+  const session: ComposioSession = {
+    tools,
+    execute: async () => await new Promise(() => undefined),
+  };
+  const adapter = new ComposioTaskrabbitAdapter({ executionTimeoutMs: 20, sessionFactory: async () => session });
+  await assert.rejects(
+    () => adapter.checkAvailability("user-a", { postalCode: "10001", serviceCategory: "plumbing" }),
+    (error: unknown) => error instanceof HomeFixError && error.message.includes("provider execution timeout") && error.retryable,
+  );
+});
+
 test("adapter does not treat a failed Composio execution as an empty search", async () => {
   const tools: ComposioSession["tools"] = [
     { name: "TASKRABBIT_MCP_CHECK_SERVICE_AVAILABILITY", description: "Check availability pricing and scoping", inputSchema: { type: "object", properties: { postalCode: { type: "string" }, service: { type: "string" } }, required: ["service"] } },
